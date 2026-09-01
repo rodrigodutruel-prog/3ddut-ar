@@ -432,7 +432,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
    ============================================================ */
 /* THREE UMD embebido arriba */
 
-const VERSION = 'v1.6.1';
+const VERSION = 'v1.7.0';
 
 /* ------------------------------------------------------------
    1. ESTADO
@@ -1168,6 +1168,7 @@ function cargarModelo3D(file){
       let _mk = 0;
       for(let _i=0;_i<_posM.count;_i+=_salto){ _mini[_mk++]=_posM.getX(_i); _mini[_mk++]=_posM.getZ(_i); }
       S.trazado = { esModelo:true, geo:geo, obra:file.name, medidas:med, tris:nTris, refEsquina:refEsq, miniPts:_mini.slice(0,_mk) };
+      prepararPlanoImagen(S.trazado);
       pintarInfo(S.trazado);
       $('estadoAR').classList.remove('err');
       revisarSoporte();
@@ -1177,6 +1178,36 @@ function cargarModelo3D(file){
     }
   };
   if(ext==='obj') fr.readAsText(file); else fr.readAsArrayBuffer(file);
+}
+
+// FOTO DE PLANO: un render cenital ortográfico del modelo, hecho UNA vez al
+// cargar. La vista en planta dibuja esta imagen (paredes y máquinas como un
+// plano de verdad) en lugar de una lluvia de puntos ilegible.
+function prepararPlanoImagen(tz){
+  try{
+    const w = 1024;
+    const bb = tz.geo.boundingBox;
+    const cvv = document.createElement('canvas'); cvv.width = w; cvv.height = w;
+    const rnd = new THREE.WebGLRenderer({ canvas: cvv, alpha: true, antialias: true });
+    rnd.setClearColor(0x000000, 0);
+    const esc = new THREE.Scene();
+    const tieneCol = !!tz.geo.getAttribute('color');
+    const mesh = new THREE.Mesh(tz.geo, new THREE.MeshBasicMaterial(
+      tieneCol ? { vertexColors: true } : { color: 0x00C2D1 }));
+    esc.add(mesh);
+    const pcx = (bb.min.x + bb.max.x) / 2, pcz = (bb.min.z + bb.max.z) / 2;
+    const H = Math.max((bb.max.x - bb.min.x) / 2, (bb.max.z - bb.min.z) / 2) * 1.04;
+    const cam = new THREE.OrthographicCamera(-H, H, H, -H, .1, Math.max(50, bb.max.y + 20));
+    cam.position.set(pcx, bb.max.y + 10, pcz);
+    cam.up.set(0, 0, -1);
+    cam.lookAt(pcx, 0, pcz);
+    rnd.render(esc, cam);
+    const img = document.createElement('canvas'); img.width = w; img.height = w;
+    img.getContext('2d').drawImage(cvv, 0, 0);
+    tz.planImg = img;
+    tz.planMeta = { cx: pcx, cz: pcz, H: H, w: w };
+    rnd.dispose();
+  }catch(e){ tz.planImg = null; }
 }
 
 function construirGrupoModelo(tz){
@@ -2448,12 +2479,37 @@ function puntoEsquina(){
       return;
     }
     dir.normalize();
-    S.rotY = Math.atan2(-dir.z, dir.x);
+    // La esquina tiene DOS paredes (la del largo y la del ancho). Se prueban
+    // las dos alineaciones y queda la que deja al usuario ADENTRO del galpón
+    // — antes se alineaba una sola a ciegas y el edificio se iba para
+    // cualquier lado ("seteo los dos puntos y no aparece nada").
+    const cam2 = (S.renderer && S.renderer.xr && S.renderer.xr.isPresenting) ? S.renderer.xr.getCamera() : S.camera;
+    const cpos = new THREE.Vector3(); if(cam2) cam2.getWorldPosition(cpos);
+    const bb2 = S.trazado.geo.boundingBox;
+    const candidatos = [
+      Math.atan2(-dir.z, dir.x),               // pared local +X siguiendo la caminata
+      Math.atan2(dir.x, dir.z)                 // pared local +Z siguiendo la caminata
+    ];
+    let elegido = candidatos[0], mejorPuntaje = -1e9;
+    candidatos.forEach(rY => {
+      const qq = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), rY);
+      const pp = S.esqP1.clone().sub(ref.clone().multiplyScalar(sEsc).applyQuaternion(qq));
+      // cámara en coords locales del modelo
+      const loc = cpos.clone().sub(pp).applyQuaternion(qq.clone().invert()).multiplyScalar(S.escala);
+      const margen = 3;
+      const adentroX = Math.min(loc.x - (bb2.min.x - margen), (bb2.max.x + margen) - loc.x);
+      const adentroZ = Math.min(loc.z - (bb2.min.z - margen), (bb2.max.z + margen) - loc.z);
+      const puntaje = Math.min(adentroX, adentroZ);   // >0 = adentro; más grande, más adentro
+      if(puntaje > mejorPuntaje){ mejorPuntaje = puntaje; elegido = rY; }
+    });
+    S.rotY = elegido;
     const q2 = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), S.rotY);
     S.grupo.rotation.y = S.rotY;
     S.grupo.position.copy(S.esqP1).sub(ref.clone().multiplyScalar(sEsc).applyQuaternion(q2));
     S.grupo.position.y += S.offsetY;
     S.esquinando = 0; S.esqP1 = null;
+    S.planoModo = 'chico';                       // el plano gigante ya cumplió: se achica solo
+    const bM2 = $('btnMini'); if(bM2) bM2.textContent = 'Planta: chica';
   const _mp = $('miniPlanta'); if(_mp) _mp.classList.add('oculto');
     const bE = $('btnEsquina'); if(bE) bE.textContent = 'Anclar esquina';
     sincronizarAncla(); guardarCalib();
@@ -2507,14 +2563,28 @@ function dibujarMiniPlanta(){
   const aPx = (wx, wz) => [mrg + (wx-mnx)*k, mrg + (wz-mnz)*k];
 
   g2.clearRect(0,0,W,H);
-  // silueta del modelo
-  g2.fillStyle = grande ? 'rgba(0,194,209,.9)' : 'rgba(0,194,209,.85)';
-  const pts = S.trazado.miniPts;
-  const pq = 1.6 * kUi;
-  for(let i=0;i<pts.length;i+=2){
-    const [wx,wz] = aMundo(pts[i], pts[i+1]);
-    const [px,pz] = aPx(wx,wz);
-    g2.fillRect(px, pz, pq, pq);
+  if(S.trazado.planImg && S.trazado.planMeta){
+    // la foto de plano, transformada local→mundo→pantalla (afín exacta)
+    const M = S.trazado.planMeta, du = (2*M.H)/M.w;
+    const m11 = k*esc*cy*du,  m12 = k*esc*(-sy)*du;
+    const m21 = k*esc*sy*du,  m22 = k*esc*cy*du;
+    const [ox, oz] = aMundo(M.cx - M.H, M.cz - M.H);
+    const [dx, dy] = aPx(ox, oz);
+    g2.save();
+    g2.globalAlpha = grande ? .96 : .9;
+    g2.setTransform(m11, m12, m21, m22, dx, dy);
+    g2.drawImage(S.trazado.planImg, 0, 0);
+    g2.restore();
+    g2.setTransform(1,0,0,1,0,0);
+  }else{
+    g2.fillStyle = grande ? 'rgba(0,194,209,.9)' : 'rgba(0,194,209,.85)';
+    const pts = S.trazado.miniPts;
+    const pq = 1.6 * kUi;
+    for(let i=0;i<pts.length;i+=2){
+      const [wx,wz] = aMundo(pts[i], pts[i+1]);
+      const [px,pz] = aPx(wx,wz);
+      g2.fillRect(px, pz, pq, pq);
+    }
   }
   if(S.trazado.refEsquina){
     // pared de referencia: línea ámbar desde la esquina
