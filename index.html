@@ -432,7 +432,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
    ============================================================ */
 /* THREE UMD embebido arriba */
 
-const VERSION = 'v1.9.0';
+const VERSION = 'v1.9.1';
 
 /* ------------------------------------------------------------
    1. ESTADO
@@ -1153,14 +1153,23 @@ function cargarModelo3D(file){
       // centrar en planta y apoyar en el piso
       geo.computeBoundingBox();
       const bb = geo.boundingBox, c = bb.getCenter(new THREE.Vector3());
+      const minY0 = bb.min.y;             // el min ANTES de trasladar (bb se recalcula después)
       geo.translate(-c.x, -bb.min.y, -c.z);
       geo.computeBoundingBox();
       const med = geo.boundingBox.getSize(new THREE.Vector3());
       const nTris = (geo.index ? geo.index.count : geo.getAttribute('position').count)/3;
-      // ESQUINA DE REFERENCIA: la esquina del piso con X y Z mínimos. Con la
-      // bandera roja del modelo y el botón "Anclar esquina", el usuario se
-      // para en la esquina real del galpón y lo clava ahí.
-      const refEsq = new THREE.Vector3(geo.boundingBox.min.x, 0, geo.boundingBox.min.z);
+      // PUNTO DE REFERENCIA: el ORIGEN del archivo — el trío de ejes que se
+      // ve en Inventor. Rodrigo pone el origen en la esquina de referencia
+      // del galpón, así que ese es el punto para el anclaje por esquina.
+      // (Si el origen quedara lejos del modelo, respaldo: esquina del bbox.)
+      // El (0,0,0) del archivo, tras escalar/rotar/centrar, queda en:
+      const refEsq = new THREE.Vector3(-c.x, -minY0, -c.z);
+      const _bbb = geo.boundingBox, _mgX = (_bbb.max.x - _bbb.min.x) * .15, _mgZ = (_bbb.max.z - _bbb.min.z) * .15;
+      if(refEsq.x < _bbb.min.x - _mgX || refEsq.x > _bbb.max.x + _mgX ||
+         refEsq.z < _bbb.min.z - _mgZ || refEsq.z > _bbb.max.z + _mgZ ||
+         refEsq.y < -1 || refEsq.y > _bbb.max.y){
+        refEsq.set(_bbb.min.x, 0, _bbb.min.z);
+      }
       // silueta en planta para el minimapa (muestra de vértices, X/Z locales)
       const _posM = geo.getAttribute('position');
       const _salto = Math.max(1, Math.floor(_posM.count/3500));
@@ -1301,6 +1310,11 @@ function construirGrupoModelo(tz){
     const pared = new THREE.ArrowHelper(new THREE.Vector3(1,0,0),
       tz.refEsquina.clone().add(new THREE.Vector3(0,.03,0)), Lp, 0xFFC400, Math.min(1.2, Lp*.12), Math.min(.7, Lp*.07));
     grpRef.add(pared);
+    // el TRÍO DE EJES como en Inventor (X rojo · Y verde arriba · Z azul):
+    // es el mismo origen que Rodrigo ve en el CAD — inconfundible
+    const Lt = Math.max(1.2, kf * .55);
+    [[new THREE.Vector3(1,0,0), 0xE31E24], [new THREE.Vector3(0,1,0), 0x21C063], [new THREE.Vector3(0,0,1), 0x2E6BFF]]
+      .forEach(par => grpRef.add(new THREE.ArrowHelper(par[0], tz.refEsquina.clone(), Lt, par[1], Lt*.22, Lt*.1)));
   }
   g.add(grpRef);
   g.userData.grpRef = grpRef;
