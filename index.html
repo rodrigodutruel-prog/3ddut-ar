@@ -366,6 +366,7 @@ body{
       <div class="pgrupo">
         <button class="bctrl" data-act="fino" id="btnFino">Ajuste fino: OFF</button>
         <button class="bctrl" data-act="escuadrar" id="btnEscuadrar">Escuadrar</button>
+        <button class="bctrl" data-act="esquina" id="btnEsquina">Anclar esquina</button>
         <button class="bctrl" data-act="rot90">Girar 90°</button>
         <button class="bctrl" data-act="auto" id="btnAuto">AUTO-AJUSTE</button>
       </div>
@@ -420,7 +421,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
    ============================================================ */
 /* THREE UMD embebido arriba */
 
-const VERSION = 'v1.1.0';
+const VERSION = 'v1.2.0';
 
 /* ------------------------------------------------------------
    1. ESTADO
@@ -452,6 +453,7 @@ const S = {
   oclDisponible: false,
   // v0.8 — medición
   midiendo: false,
+  esquinando: 0, esqP1: null,    // anclaje por esquina de referencia (2 toques)
   medGrp: null, medPts: [],
   // v1.0 — escuadrar / auto-ajuste / marcador
   escuadrando: false, escPts: [],
@@ -1032,6 +1034,58 @@ function parseSTL(buf){
   return g;
 }
 
+// STL binario GIGANTE (galpones completos, millones de triángulos): se
+// SIMPLIFICA al cargar con una rejilla de agrupamiento de vértices. Un
+// celular no puede con 3 M de triángulos; con la rejilla queda una malla
+// fiel a escala de obra y liviana. Corre por lotes para no colgar la UI.
+async function parseSTLBinGrande(buf, n, avance){
+  const dv = new DataView(buf);
+  // bbox muestreada (para elegir el tamaño de celda)
+  let minx=1e18,miny=1e18,minz=1e18,maxx=-1e18,maxy=-1e18,maxz=-1e18;
+  const salto = Math.max(1, Math.floor(n/30000));
+  for(let i=0;i<n;i+=salto){
+    const o = 84 + i*50 + 12;
+    const x=dv.getFloat32(o,true), y=dv.getFloat32(o+4,true), z=dv.getFloat32(o+8,true);
+    if(x<minx)minx=x; if(x>maxx)maxx=x;
+    if(y<miny)miny=y; if(y>maxy)maxy=y;
+    if(z<minz)minz=z; if(z>maxz)maxz=z;
+  }
+  const diag = Math.hypot(maxx-minx, maxy-miny, maxz-minz) || 1;
+  const celda = Math.min(Math.max(diag/1400, 4), 80);   // en unidades del archivo
+  const map = new Map(), vx=[], vy=[], vz=[];
+  const tIdx = new Uint32Array(n*3);
+  let nIdx = 0, tri = 0;
+  await new Promise(done => {
+    function lote(){
+      const fin = Math.min(n, tri + 120000);
+      for(; tri<fin; tri++){
+        let off = 84 + tri*50 + 12;
+        let i0=0, i1=0, i2=0;
+        for(let v2=0; v2<3; v2++){
+          const x=dv.getFloat32(off,true), y=dv.getFloat32(off+4,true), z=dv.getFloat32(off+8,true);
+          off += 12;
+          const key = ((Math.round(x/celda)+16384)*32768 + (Math.round(y/celda)+16384))*32768 + (Math.round(z/celda)+16384);
+          let id = map.get(key);
+          if(id === undefined){ id = vx.length; map.set(key, id); vx.push(x); vy.push(y); vz.push(z); }
+          if(v2===0) i0=id; else if(v2===1) i1=id; else i2=id;
+        }
+        if(i0===i1 || i1===i2 || i0===i2) continue;   // colapsó: no es cara
+        tIdx[nIdx++]=i0; tIdx[nIdx++]=i1; tIdx[nIdx++]=i2;
+      }
+      if(avance) avance(tri/n);
+      if(tri < n) setTimeout(lote, 0); else done();
+    }
+    lote();
+  });
+  const pos = new Float32Array(vx.length*3);
+  for(let i=0;i<vx.length;i++){ pos[i*3]=vx[i]; pos[i*3+1]=vy[i]; pos[i*3+2]=vz[i]; }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setIndex(new THREE.BufferAttribute(tIdx.slice(0, nIdx), 1));
+  g.computeVertexNormals();
+  return g;
+}
+
 function parseOBJ(txt){
   const vs = [], tris = [];
   const lineas = txt.split('\n');
@@ -1061,9 +1115,26 @@ function parseOBJ(txt){
 function cargarModelo3D(file){
   const ext = (file.name.split('.').pop()||'').toLowerCase();
   const fr = new FileReader();
-  fr.onload = () => {
+  fr.onload = async () => {
     try{
-      const geo = ext==='obj' ? parseOBJ(fr.result) : parseSTL(fr.result);
+      let geo;
+      if(ext === 'obj'){ geo = parseOBJ(fr.result); }
+      else{
+        let nT = 0;
+        if(fr.result.byteLength >= 84){
+          const dv0 = new DataView(fr.result);
+          const cand = dv0.getUint32(80, true);
+          if(84 + cand*50 === fr.result.byteLength) nT = cand;
+        }
+        if(nT > 350000){
+          $('estadoAR').className = 'nota';
+          geo = await parseSTLBinGrande(fr.result, nT, f => {
+            $('estadoAR').textContent = 'Modelo grande (' + Math.round(nT/1000) + 'k caras): simplificando… ' + Math.round(f*100) + '%';
+          });
+        }else{
+          geo = parseSTL(fr.result);
+        }
+      }
       const f = { mm:0.001, cm:0.01, m:1 }[$('selUnid').value] || 0.001;
       geo.scale(f,f,f);
       // Inventor exporta Z-arriba; three usa Y-arriba
@@ -1074,8 +1145,12 @@ function cargarModelo3D(file){
       geo.translate(-c.x, -bb.min.y, -c.z);
       geo.computeBoundingBox();
       const med = geo.boundingBox.getSize(new THREE.Vector3());
-      const nTris = geo.getAttribute('position').count/3;
-      S.trazado = { esModelo:true, geo:geo, obra:file.name, medidas:med, tris:nTris };
+      const nTris = (geo.index ? geo.index.count : geo.getAttribute('position').count)/3;
+      // ESQUINA DE REFERENCIA: la esquina del piso con X y Z mínimos. Con la
+      // bandera roja del modelo y el botón "Anclar esquina", el usuario se
+      // para en la esquina real del galpón y lo clava ahí.
+      const refEsq = new THREE.Vector3(geo.boundingBox.min.x, 0, geo.boundingBox.min.z);
+      S.trazado = { esModelo:true, geo:geo, obra:file.name, medidas:med, tris:nTris, refEsquina:refEsq };
       pintarInfo(S.trazado);
       $('estadoAR').classList.remove('err');
       revisarSoporte();
@@ -1136,6 +1211,23 @@ function construirGrupoModelo(tz){
   grilla.material.transparent = true; grilla.material.opacity = .22;
   grilla.userData.rol = 'grilla';
   g.add(grilla);
+
+  // BANDERA de la esquina de referencia: es la esquina que se apoya sobre la
+  // esquina real del galpón con el botón "Anclar esquina".
+  if(tz.refEsquina){
+    const poste = new THREE.Mesh(new THREE.CylinderGeometry(.035, .035, 1.6, 10),
+      new THREE.MeshBasicMaterial({ color:0xE31E24 }));
+    poste.position.copy(tz.refEsquina).add(new THREE.Vector3(0, .8, 0));
+    g.add(poste);
+    const bandera = new THREE.Mesh(new THREE.BoxGeometry(.45, .28, .02),
+      new THREE.MeshBasicMaterial({ color:0xE31E24, side:THREE.DoubleSide }));
+    bandera.position.copy(tz.refEsquina).add(new THREE.Vector3(.25, 1.45, 0));
+    g.add(bandera);
+    const etE = etiqueta('ESQUINA REF.', new THREE.Color(0xE31E24));
+    etE.position.copy(tz.refEsquina).add(new THREE.Vector3(0, 1.85, 0));
+    etE.scale.set(.5, .125, 1);
+    g.add(etE);
+  }
 
   const grpEtiq = new THREE.Group(), grpMaq = new THREE.Group();
   const et = etiqueta(tz.obra.replace(/\.(stl|obj)$/i,''), new THREE.Color(0x00AEEF));
@@ -1733,6 +1825,7 @@ async function iniciarAR(){
 
   // tap → anclar (o medir). Escuchamos el 'select' de la sesión.
   const alAnclar = ev => {
+    if(S.esquinando){ puntoEsquina(); return; }
     if(S.midiendo){ agregarPuntoMedicion(); return; }
     if(S.escuadrando){ agregarPuntoEscuadra(); return; }
     if(S.anclado) return;
@@ -1772,7 +1865,7 @@ async function iniciarAR(){
 
   renderer.setAnimationLoop((t, frame) => {
     // retícula: antes de anclar, y también mientras se mide
-    if(frame && (!S.anclado || S.midiendo || S.escuadrando) && S.hitSource){
+    if(frame && (!S.anclado || S.midiendo || S.escuadrando || S.esquinando) && S.hitSource){
       const hits = frame.getHitTestResults(S.hitSource);
       if(hits.length){
         const pose = hits[0].getPose(S.refSpaceLocal);
@@ -1783,7 +1876,7 @@ async function iniciarAR(){
         S.reticula.visible = false;
         S.ultimoHit = null;
       }
-    }else if(!S.midiendo && !S.escuadrando){
+    }else if(!S.midiendo && !S.escuadrando && !S.esquinando){
       S.reticula.visible = false;
     }
 
@@ -2163,6 +2256,52 @@ function agregarPuntoMedicion(){
   }
 }
 
+/* ------------------------------------------------------------
+   7e. ANCLAR POR ESQUINA — replanteo de 2 toques
+   Toque 1: parado en la esquina real, la retícula sobre el rincón
+   → la ESQUINA REF. del modelo se clava ahí.
+   Toque 2: la retícula sobre el piso siguiendo la pared de
+   referencia → el modelo gira alrededor de la esquina hasta que
+   su pared acompaña la real. Galpones enteros, ubicados en serio.
+   ------------------------------------------------------------ */
+function puntoEsquina(){
+  if(!S.reticula || !S.reticula.visible || !S.grupo || !S.trazado || !S.trazado.refEsquina){
+    $('hudMsg').textContent = 'Apuntá la retícula al piso (tiene que verse el aro rojo) y tocá.';
+    return;
+  }
+  const p = new THREE.Vector3().setFromMatrixPosition(S.reticula.matrix);
+  const sEsc = 1 / S.escala;
+  const ref = S.trazado.refEsquina;
+  if(S.esquinando === 1){
+    S.esqP1 = p.clone();
+    const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), S.rotY);
+    const refW = ref.clone().multiplyScalar(sEsc).applyQuaternion(q);
+    S.grupo.position.copy(p).sub(refW);
+    S.grupo.position.y += S.offsetY;
+    S.grupo.rotation.y = S.rotY;
+    S.grupo.visible = true; S.anclado = true;
+    S.esquinando = 2;
+    $('hudMsg').textContent = 'Esquina fijada ⚑. Ahora caminá unos metros SIGUIENDO LA PARED de referencia, apuntá la retícula al piso junto a la pared y tocá.';
+  }else{
+    const dir = p.clone().sub(S.esqP1); dir.y = 0;
+    if(dir.lengthSq() < 1){
+      $('hudMsg').textContent = 'Muy cerca de la esquina: alejate al menos 2-3 m por la pared y tocá de nuevo.';
+      return;
+    }
+    dir.normalize();
+    S.rotY = Math.atan2(-dir.z, dir.x);
+    const q2 = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), S.rotY);
+    S.grupo.rotation.y = S.rotY;
+    S.grupo.position.copy(S.esqP1).sub(ref.clone().multiplyScalar(sEsc).applyQuaternion(q2));
+    S.grupo.position.y += S.offsetY;
+    S.esquinando = 0; S.esqP1 = null;
+    const bE = $('btnEsquina'); if(bE) bE.textContent = 'Anclar esquina';
+    sincronizarAncla(); guardarCalib();
+    $('hudMsg').textContent = 'Anclado por esquina y pared ✓. Si la pared quedó del lado equivocado, tocá "Girar 90°".';
+  }
+  refrescarHUD();
+}
+
 function refrescarHUD(){
   const esc = S.escala === 1 ? '1:1' : ('1:' + S.escala);
   $('hudDatos').textContent =
@@ -2180,6 +2319,7 @@ function cerrarAR(){
   S.grupo = null; S.anclado = false;
   S.anchor = null; S.ancListo = false; S.ultimoHit = null;
   S.midiendo = false; S.medGrp = null; S.medPts = [];
+  S.esquinando = 0; S.esqP1 = null;
   S.escuadrando = false; S.escPts = []; S.autoPend = 0; S.autoNube = null; S.modeloPts = null; S.autoCorriendo = false; S.marcadorModo = false;
   if(S.ocl && S.ocl.tex){ try{ S.ocl.tex.dispose(); }catch(e){} }
   S.ocl = null; S.oclDisponible = false;
@@ -2204,7 +2344,7 @@ function cerrarAR(){
 const GES = { punteros:new Map(), angPrev:null, cyPrev:null };
 
 $('gestos').addEventListener('beforexrselect', ev => {
-  if(S.anclado && !S.midiendo && !S.escuadrando) ev.preventDefault();   // arrastrar no debe re-disparar select
+  if(S.anclado && !S.midiendo && !S.escuadrando && !S.esquinando) ev.preventDefault();   // arrastrar no debe re-disparar select
 });
 
 function gesAnguloYCentro(){
@@ -2232,7 +2372,7 @@ $('gestos').addEventListener('pointerup', gesFin);
 $('gestos').addEventListener('pointercancel', gesFin);
 
 $('gestos').addEventListener('pointermove', ev => {
-  if(!S.anclado || S.midiendo || S.escuadrando || S.autoCorriendo || !S.grupo || !GES.punteros.has(ev.pointerId)) return;
+  if(!S.anclado || S.midiendo || S.escuadrando || S.esquinando || S.autoCorriendo || !S.grupo || !GES.punteros.has(ev.pointerId)) return;
   const p = GES.punteros.get(ev.pointerId);
   const dx = ev.clientX - p.x, dy = ev.clientY - p.y;
   p.x = ev.clientX; p.y = ev.clientY;
@@ -2336,6 +2476,19 @@ $('panelAR').addEventListener('click', ev => {
     else if(!S.autoCorriendo){
       S.autoNube = []; S.autoPend = 45;
       $('hudMsg').textContent = 'Auto-ajuste: movete DESPACIO alrededor de la pieza (1-2 pasos) mientras capturo…';
+    }
+  }
+  if(a==='esquina'){
+    if(S.esquinando){
+      S.esquinando = 0; S.esqP1 = null;
+      $('btnEsquina').textContent = 'Anclar esquina';
+      $('hudMsg').textContent = 'Anclaje por esquina cancelado.';
+    }else if(!S.trazado || !S.trazado.esModelo){
+      $('hudMsg').textContent = 'El anclaje por esquina es para modelos STL/OBJ (usa su bandera ESQUINA REF.).';
+    }else{
+      S.esquinando = 1;
+      $('btnEsquina').textContent = 'Esquina: cancelar';
+      $('hudMsg').textContent = 'Parate en la ESQUINA REAL de referencia del galpón, apuntá la retícula al rincón del piso y tocá.';
     }
   }
   if(a==='marcador'){
