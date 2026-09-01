@@ -432,7 +432,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
    ============================================================ */
 /* THREE UMD embebido arriba */
 
-const VERSION = 'v1.7.0';
+const VERSION = 'v1.8.0';
 
 /* ------------------------------------------------------------
    1. ESTADO
@@ -1197,10 +1197,15 @@ function prepararPlanoImagen(tz){
     esc.add(mesh);
     const pcx = (bb.min.x + bb.max.x) / 2, pcz = (bb.min.z + bb.max.z) / 2;
     const H = Math.max((bb.max.x - bb.min.x) / 2, (bb.max.z - bb.min.z) / 2) * 1.04;
-    const cam = new THREE.OrthographicCamera(-H, H, H, -H, .1, Math.max(50, bb.max.y + 20));
-    cam.position.set(pcx, bb.max.y + 10, pcz);
+    // CORTE DE PLANO: en un edificio, mirar desde el techo muestra las chapas
+    // y las cerchas — puré. Como en un plano de arquitectura, se corta a
+    // 1,8 m: paredes seccionadas, máquinas y piso. Piezas bajas: vista entera.
+    const alto = bb.max.y - bb.min.y;
+    const corte = (alto > 3) ? (bb.min.y + 1.8) : (bb.max.y + 10);
+    const cam = new THREE.OrthographicCamera(-H, H, H, -H, .01, (corte - bb.min.y) + 5);
+    cam.position.set(pcx, corte, pcz);
     cam.up.set(0, 0, -1);
-    cam.lookAt(pcx, 0, pcz);
+    cam.lookAt(pcx, bb.min.y, pcz);
     rnd.render(esc, cam);
     const img = document.createElement('canvas'); img.width = w; img.height = w;
     img.getContext('2d').drawImage(cvv, 0, 0);
@@ -1852,7 +1857,13 @@ async function iniciarAR(){
   if(typeof session.requestHitTestSource === 'function'){
     try{
       const refViewer = await session.requestReferenceSpace('viewer');
-      S.hitSource = await session.requestHitTestSource({ space: refViewer });
+      // 'plane' + 'point': engancha el PISO y también las PAREDES — marcar
+      // la esquina contra la pared proyecta al piso con más precisión
+      try{
+        S.hitSource = await session.requestHitTestSource({ space: refViewer, entityTypes: ['plane', 'point'] });
+      }catch(e2){
+        S.hitSource = await session.requestHitTestSource({ space: refViewer });
+      }
     }catch(e){ S.hitSource = null; }
   }
 
@@ -1910,6 +1921,8 @@ async function iniciarAR(){
   // DIRECTO en el modo esquina: primero el rincón real, después la pared.
   if(S.trazado && S.trazado.esModelo && Math.max(S.trazado.medidas.x, S.trazado.medidas.z) >= 12){
     S.esquinando = 1;
+    S.planoModo = 'grande'; S.planZoom = 1; S.planPan = { x:0, y:0 };
+    const bM0 = $('btnMini'); if(bM0) bM0.textContent = 'Planta: GRANDE';
     const bE = $('btnEsquina'); if(bE) bE.textContent = 'Esquina: cancelar';
     $('hudMsg').textContent = 'MODELO GRANDE: andá a la ESQUINA de referencia real del galpón, apuntá la retícula al rincón del piso y tocá. Después vas a marcar la pared.';
   }
@@ -1963,6 +1976,10 @@ async function iniciarAR(){
         S.reticula.visible = true;
         S.reticula.matrix.fromArray(pose.transform.matrix);
         S.ultimoHit = hits[0];
+        // piso u pared: el eje Y del pose del hit es la normal de la superficie
+        const _ny = S.reticula.matrix.elements[5];
+        S.hitEsPared = Math.abs(_ny) < 0.5;
+        S.reticula.material.color.setHex(S.hitEsPared ? 0x00AEEF : 0xE31E24);
       }else{
         S.reticula.visible = false;
         S.ultimoHit = null;
@@ -2005,7 +2022,7 @@ async function iniciarAR(){
 
     if(S.trazado && S.trazado.esModelo){
       S._miniTick = (S._miniTick||0) + 1;
-      if(S._miniTick % 6 === 0) dibujarMiniPlanta();
+      if(S._miniTick % 4 === 0) dibujarMiniPlanta();
     }
 
     // auto-ajuste: juntar nube de puntos de varios frames y encajar.
@@ -2452,11 +2469,14 @@ function cambiarPiel(){
    su pared acompaña la real. Galpones enteros, ubicados en serio.
    ------------------------------------------------------------ */
 function puntoEsquina(){
+  if(S._gesMovio){ S._gesMovio = false; return; }   // fue un arrastre del plano, no una marca
   if(!S.reticula || !S.reticula.visible || !S.grupo || !S.trazado || !S.trazado.refEsquina){
     $('hudMsg').textContent = 'Apuntá la retícula al piso (tiene que verse el aro rojo) y tocá.';
     return;
   }
   const p = new THREE.Vector3().setFromMatrixPosition(S.reticula.matrix);
+  const contraPared = !!S.hitEsPared;
+  if(contraPared) p.y = 0;    // pared: el punto baja en vertical al nivel del piso
   const sEsc = 1 / S.escala;
   const ref = S.trazado.refEsquina;
   if(S.esquinando === 1){
@@ -2471,7 +2491,7 @@ function puntoEsquina(){
     const bE1 = $('btnEsquina'); if(bE1) bE1.textContent = '↩ Volver a la esquina';
     S.planoModo = 'grande';   // la vista en planta se abre sola para ubicarse
     const bM = $('btnMini'); if(bM) bM.textContent = 'Planta: GRANDE';
-    $('hudMsg').textContent = 'Esquina fijada ⚑. Ahora caminá unos metros SIGUIENDO LA PARED de referencia, apuntá la retícula al piso junto a la pared y tocá.';
+    $('hudMsg').textContent = (contraPared ? 'Esquina fijada contra la PARED ⚑ (proyectada al piso). ' : 'Esquina fijada ⚑. ')  + ' Ahora caminá unos metros SIGUIENDO LA PARED de referencia, apuntá la retícula al piso junto a la pared y tocá.';
   }else{
     const dir = p.clone().sub(S.esqP1); dir.y = 0;
     if(dir.lengthSq() < 1){
@@ -2508,8 +2528,9 @@ function puntoEsquina(){
     S.grupo.position.copy(S.esqP1).sub(ref.clone().multiplyScalar(sEsc).applyQuaternion(q2));
     S.grupo.position.y += S.offsetY;
     S.esquinando = 0; S.esqP1 = null;
-    S.planoModo = 'chico';                       // el plano gigante ya cumplió: se achica solo
-    const bM2 = $('btnMini'); if(bM2) bM2.textContent = 'Planta: chica';
+    S.planoModo = 'off';                         // listo el replanteo: el plano se apaga
+    $('miniPlanta').classList.add('oculto');
+    const bM2 = $('btnMini'); if(bM2) bM2.textContent = 'Planta: OFF';
   const _mp = $('miniPlanta'); if(_mp) _mp.classList.add('oculto');
     const bE = $('btnEsquina'); if(bE) bE.textContent = 'Anclar esquina';
     sincronizarAncla(); guardarCalib();
@@ -2525,30 +2546,58 @@ function puntoEsquina(){
    ------------------------------------------------------------ */
 function dibujarMiniPlanta(){
   const cv = $('miniPlanta');
-  if(!cv || !S.trazado || !S.trazado.miniPts || !S.grupo || !S.grupo.visible){ if(cv) cv.classList.add('oculto'); return; }
-  const modo = S.planoModo || 'chico';
-  if(modo === 'off' || S.verMini === false){ cv.classList.add('oculto'); return; }
+  if(!cv || !S.trazado || !S.trazado.esModelo){ if(cv) cv.classList.add('oculto'); return; }
+  const modo = S.planoModo || 'off';
+  if(modo === 'off'){ cv.classList.add('oculto'); return; }
+  const colocado = S.grupo && S.grupo.visible;
+  if(!colocado && !S.esquinando){ cv.classList.add('oculto'); return; }
   cv.classList.remove('oculto');
   const grande = modo === 'grande';
   cv.classList.toggle('grande', grande);
   const objW = grande ? window.innerWidth : 300, objH = grande ? window.innerHeight : 300;
   if(cv.width !== objW || cv.height !== objH){ cv.width = objW; cv.height = objH; }
   const kUi = grande ? 2.1 : 1;
+  const zoom = grande ? (S.planZoom || 1) : 1;
+  const panX = grande ? (S.planPan ? S.planPan.x : 0) : 0;
+  const panY = grande ? (S.planPan ? S.planPan.y : 0) : 0;
   const g2 = cv.getContext('2d');
   const W = cv.width, H = cv.height;
+  g2.setTransform(1,0,0,1,0,0);
+  g2.clearRect(0,0,W,H);
+  const M = S.trazado.planMeta;
+
+  if(!colocado){
+    // ── VISTA PREVIA (todavía sin anclar): el plano solo, norte arriba,
+    //    con la esquina de referencia en rojo — para estudiarlo y ubicarse ──
+    if(!S.trazado.planImg || !M) return;
+    const kFit = Math.min(W, H) / (2 * M.H) * .92 * zoom;
+    const dib = 2 * M.H * kFit;
+    const ox = W/2 - dib/2 + panX, oy = H/2 - dib/2 + panY;
+    g2.globalAlpha = .96;
+    g2.drawImage(S.trazado.planImg, ox, oy, dib, dib);
+    g2.globalAlpha = 1;
+    if(S.trazado.refEsquina){
+      const px = ox + (S.trazado.refEsquina.x - (M.cx - M.H)) * kFit;
+      const pz = oy + (S.trazado.refEsquina.z - (M.cz - M.H)) * kFit;
+      g2.fillStyle = '#E31E24';
+      g2.beginPath(); g2.arc(px, pz, 6*kUi, 0, Math.PI*2); g2.fill();
+      g2.strokeStyle = '#FFC400'; g2.lineWidth = 2.5*kUi;
+      g2.beginPath(); g2.moveTo(px, pz);
+      g2.lineTo(px + Math.min(M.H, 14) * kFit, pz); g2.stroke();
+      g2.fillStyle = '#fff'; g2.font = 'bold ' + Math.round(7*kUi+8) + 'px sans-serif';
+      g2.fillText('⚑ esquina de referencia', px + 8*kUi, pz - 8*kUi);
+    }
+    return;
+  }
+
+  // ── ANCLADO: el plano girado y escalado como quedó en el mundo, con vos ──
   const cam = (S.renderer && S.renderer.xr && S.renderer.xr.isPresenting) ? S.renderer.xr.getCamera() : S.camera;
-  if(!cam) return;
+  if(!cam || !M || !S.trazado.planImg) return;
   const cp = new THREE.Vector3(); cam.getWorldPosition(cp);
   const fw = new THREE.Vector3(); cam.getWorldDirection(fw);
-
   const esc = 1/S.escala, cy = Math.cos(S.rotY), sy = Math.sin(S.rotY);
   const gp = S.grupo.position;
-  const aMundo = (x, z) => {                    // local → mundo (XZ, con rotY)
-    const wx = (x*cy + z*sy) * esc + gp.x;      // R_y: x' = x cos + z sin
-    const wz = (-x*sy + z*cy) * esc + gp.z;     //      z' = -x sin + z cos
-    return [wx, wz];
-  };
-  // encuadre: bbox del modelo en mundo + la cámara
+  const aMundo = (x, z) => [ (x*cy + z*sy)*esc + gp.x, (-x*sy + z*cy)*esc + gp.z ];
   const bb = S.trazado.geo.boundingBox;
   let mnx=1e9, mnz=1e9, mxx=-1e9, mxz=-1e9;
   [[bb.min.x,bb.min.z],[bb.max.x,bb.min.z],[bb.min.x,bb.max.z],[bb.max.x,bb.max.z]].forEach(e => {
@@ -2558,43 +2607,27 @@ function dibujarMiniPlanta(){
   });
   if(cp.x<mnx)mnx=cp.x; if(cp.x>mxx)mxx=cp.x;
   if(cp.z<mnz)mnz=cp.z; if(cp.z>mxz)mxz=cp.z;
-  const mrg = 12;
-  const k = Math.min((W-2*mrg)/Math.max(.5, mxx-mnx), (H-2*mrg)/Math.max(.5, mxz-mnz));
-  const aPx = (wx, wz) => [mrg + (wx-mnx)*k, mrg + (wz-mnz)*k];
+  const cxW = (mnx+mxx)/2, czW = (mnz+mxz)/2;
+  const k = Math.min((W-24)/Math.max(.5, mxx-mnx), (H-24)/Math.max(.5, mxz-mnz)) * zoom;
+  const aPx = (wx, wz) => [ W/2 + (wx-cxW)*k + panX, H/2 + (wz-czW)*k + panY ];
 
-  g2.clearRect(0,0,W,H);
-  if(S.trazado.planImg && S.trazado.planMeta){
-    // la foto de plano, transformada local→mundo→pantalla (afín exacta)
-    const M = S.trazado.planMeta, du = (2*M.H)/M.w;
-    const m11 = k*esc*cy*du,  m12 = k*esc*(-sy)*du;
-    const m21 = k*esc*sy*du,  m22 = k*esc*cy*du;
-    const [ox, oz] = aMundo(M.cx - M.H, M.cz - M.H);
-    const [dx, dy] = aPx(ox, oz);
-    g2.save();
-    g2.globalAlpha = grande ? .96 : .9;
-    g2.setTransform(m11, m12, m21, m22, dx, dy);
-    g2.drawImage(S.trazado.planImg, 0, 0);
-    g2.restore();
-    g2.setTransform(1,0,0,1,0,0);
-  }else{
-    g2.fillStyle = grande ? 'rgba(0,194,209,.9)' : 'rgba(0,194,209,.85)';
-    const pts = S.trazado.miniPts;
-    const pq = 1.6 * kUi;
-    for(let i=0;i<pts.length;i+=2){
-      const [wx,wz] = aMundo(pts[i], pts[i+1]);
-      const [px,pz] = aPx(wx,wz);
-      g2.fillRect(px, pz, pq, pq);
-    }
-  }
+  // la foto de plano con la afín exacta local→mundo→pantalla
+  const du = (2*M.H)/M.w;
+  const m11 = k*esc*cy*du,  m12 = k*esc*(-sy)*du;
+  const m21 = k*esc*sy*du,  m22 = k*esc*cy*du;
+  const [ox2, oz2] = aMundo(M.cx - M.H, M.cz - M.H);
+  const [dx2, dy2] = aPx(ox2, oz2);
+  g2.save();
+  g2.globalAlpha = grande ? .96 : .9;
+  g2.setTransform(m11, m12, m21, m22, dx2, dy2);
+  g2.drawImage(S.trazado.planImg, 0, 0);
+  g2.restore();
+  g2.setTransform(1,0,0,1,0,0);
+  g2.globalAlpha = 1;
+
   if(S.trazado.refEsquina){
-    // pared de referencia: línea ámbar desde la esquina
-    const Lp = Math.min(Math.max(S.trazado.medidas.x * .5, 4), 14) / S.escala;
     const [ex,ez] = aMundo(S.trazado.refEsquina.x, S.trazado.refEsquina.z);
-    const [fx,fz] = aMundo(S.trazado.refEsquina.x + Lp*S.escala, S.trazado.refEsquina.z);
-    const [px1,pz1] = aPx(ex,ez), [px2,pz2] = aPx(fx,fz);
-    g2.strokeStyle = '#FFC400'; g2.lineWidth = 2*kUi;
-    g2.beginPath(); g2.moveTo(px1,pz1); g2.lineTo(px2,pz2); g2.stroke();
-    // bandera de la esquina de referencia
+    const [px1,pz1] = aPx(ex,ez);
     g2.fillStyle = '#E31E24';
     g2.beginPath(); g2.arc(px1, pz1, 5*kUi, 0, Math.PI*2); g2.fill();
   }
@@ -2665,9 +2698,12 @@ function gesAnguloYCentro(){
 
 $('gestos').addEventListener('pointerdown', ev => {
   GES.punteros.set(ev.pointerId, { x:ev.clientX, y:ev.clientY });
+  if(GES.punteros.size === 1) S._gesMovio = false;
   if(GES.punteros.size === 2){
     const g = gesAnguloYCentro();
     GES.angPrev = g.ang; GES.cyPrev = g.cy;
+    const ps = [...GES.punteros.values()];
+    GES.sepPrev = Math.hypot(ps[1].x-ps[0].x, ps[1].y-ps[0].y);
   }
 });
 
@@ -2680,6 +2716,24 @@ $('gestos').addEventListener('pointerup', gesFin);
 $('gestos').addEventListener('pointercancel', gesFin);
 
 $('gestos').addEventListener('pointermove', ev => {
+  // durante el modo esquina con el plano grande: 1 dedo PANEA el plano,
+  // 2 dedos hacen ZOOM — y ese arrastre no marca ningún punto
+  if(S.esquinando && S.planoModo === 'grande' && GES.punteros.has(ev.pointerId)){
+    const p0 = GES.punteros.get(ev.pointerId);
+    const dx0 = ev.clientX - p0.x, dy0 = ev.clientY - p0.y;
+    p0.x = ev.clientX; p0.y = ev.clientY;
+    if(Math.abs(dx0) + Math.abs(dy0) > 2) S._gesMovio = true;
+    S.planPan = S.planPan || { x:0, y:0 };
+    if(GES.punteros.size === 1){
+      S.planPan.x += dx0; S.planPan.y += dy0;
+    }else if(GES.punteros.size === 2 && GES.sepPrev){
+      const ps = [...GES.punteros.values()];
+      const sep = Math.hypot(ps[1].x-ps[0].x, ps[1].y-ps[0].y);
+      S.planZoom = Math.min(8, Math.max(.5, (S.planZoom || 1) * (sep / GES.sepPrev)));
+      GES.sepPrev = sep;
+    }
+    return;
+  }
   if(!S.anclado || S.midiendo || S.escuadrando || S.esquinando || S.autoCorriendo || !S.grupo || !GES.punteros.has(ev.pointerId)) return;
   const p = GES.punteros.get(ev.pointerId);
   const dx = ev.clientX - p.x, dy = ev.clientY - p.y;
