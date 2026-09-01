@@ -445,7 +445,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
    ============================================================ */
 /* THREE UMD embebido arriba */
 
-const VERSION = 'v2.5.0';
+const VERSION = 'v2.6.0';
 
 /* ------------------------------------------------------------
    1. ESTADO
@@ -1111,13 +1111,17 @@ async function parseSTLBinGrande(buf, n, avance){
 }
 
 function parseOBJ(txt){
-  const vs = [], tris = [];
+  const vs = [], cols = [], tris = [];
+  let hayColor = false;
   const lineas = txt.split('\n');
   for(let i=0;i<lineas.length;i++){
     const l = lineas[i];
     if(l.charCodeAt(0)===118 && l.charCodeAt(1)===32){          // "v "
       const p = l.trim().split(/\s+/);
       vs.push(+p[1], +p[2], +p[3]);
+      // extensión de colores por vértice: "v x y z r g b" (la usa PlanObra)
+      if(p.length >= 7){ cols.push(+p[4], +p[5], +p[6]); hayColor = true; }
+      else cols.push(1, 1, 1);
     }else if(l.charCodeAt(0)===102 && l.charCodeAt(1)===32){    // "f "
       const p = l.trim().split(/\s+/).slice(1)
         .map(t => { let k = parseInt(t,10); return k<0 ? vs.length/3 + k : k-1; });
@@ -1133,6 +1137,25 @@ function parseOBJ(txt){
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(pos,3));
   g.computeVertexNormals();
+  if(hayColor){
+    // COLORES REALES del archivo × la misma luz fija de las otras pieles
+    // (sin la luz horneada el modelo queda chato y no se leen los volúmenes)
+    const nrm = g.getAttribute('normal');
+    const col = new Float32Array(tris.length*3);
+    const L = new THREE.Vector3(.45,.78,.42).normalize();
+    const nv = new THREE.Vector3();
+    for(let i=0;i<tris.length;i++){
+      const k = tris[i]*3;
+      nv.set(nrm.getX(i), nrm.getY(i), nrm.getZ(i));
+      const lam = .48 + .52*Math.abs(nv.dot(L));
+      col[i*3]   = Math.min(1, cols[k]   * lam);
+      col[i*3+1] = Math.min(1, cols[k+1] * lam);
+      col[i*3+2] = Math.min(1, cols[k+2] * lam);
+    }
+    const attr = new THREE.BufferAttribute(col, 3);
+    g.setAttribute('color', attr);
+    g.userData.pieles = { real: attr };
+  }
   return g;
 }
 
@@ -1282,6 +1305,10 @@ function cargarModelo3D(file){
       const _mini = new Float32Array(Math.ceil(_posM.count/_salto)*2);
       let _mk = 0;
       for(let _i=0;_i<_posM.count;_i+=_salto){ _mini[_mk++]=_posM.getX(_i); _mini[_mk++]=_posM.getZ(_i); }
+      if(geo.userData.pieles && geo.userData.pieles.real){
+        S.piel = 'real';
+        const bC = $('btnColor'); if(bC) bC.textContent = 'Color: real';
+      }
       S.trazado = { esModelo:true, esPlanObra:esPlanObra, geo:geo, obra:file.name, medidas:med, tris:nTris, refEsquina:refEsq, miniPts:_mini.slice(0,_mk), refCandidatos:new Float32Array(_cand) };
       prepararPlanoImagen(S.trazado);
       pintarInfo(S.trazado);
@@ -2616,6 +2643,7 @@ function agregarPuntoMedicion(){
    caras (cada orientación un tono: se distinguen los planos)
    ------------------------------------------------------------ */
 const PIELES = ['altura', 'metal', 'caras', 'piezas'];
+function pielesDe(geo){ return (geo && geo.userData.pieles && geo.userData.pieles.real) ? ['real'].concat(PIELES) : PIELES; }
 // PIEZAS: qué triángulos están conectados entre sí = una pieza física
 // (cada máquina, pared o cercha del STL por separado). Union-find.
 function componentesDe(geo){
@@ -2688,7 +2716,8 @@ function hornearPiel(geo, modo, alto){
 }
 function cambiarPiel(){
   if(!S.trazado || !S.trazado.esModelo) return;
-  S.piel = PIELES[(PIELES.indexOf(S.piel || 'altura') + 1) % PIELES.length];
+  const LISTA = pielesDe(S.trazado.geo);
+  S.piel = LISTA[(LISTA.indexOf(S.piel || 'altura') + 1) % LISTA.length];
   if(S.piel === 'piezas'){
     const comp = componentesDe(S.trazado.geo);
     if(!comp){ S.piel = 'altura'; }                // modelo gigante sin decimar: no da
