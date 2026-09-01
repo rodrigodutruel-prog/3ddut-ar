@@ -432,7 +432,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
    ============================================================ */
 /* THREE UMD embebido arriba */
 
-const VERSION = 'v1.6.0';
+const VERSION = 'v1.6.1';
 
 /* ------------------------------------------------------------
    1. ESTADO
@@ -2437,6 +2437,7 @@ function puntoEsquina(){
     S.grupo.rotation.y = S.rotY;
     S.grupo.visible = true; S.anclado = true;
     S.esquinando = 2;
+    const bE1 = $('btnEsquina'); if(bE1) bE1.textContent = '↩ Volver a la esquina';
     S.planoModo = 'grande';   // la vista en planta se abre sola para ubicarse
     const bM = $('btnMini'); if(bM) bM.textContent = 'Planta: GRANDE';
     $('hudMsg').textContent = 'Esquina fijada ⚑. Ahora caminá unos metros SIGUIENDO LA PARED de referencia, apuntá la retícula al piso junto a la pared y tocá.';
@@ -2456,7 +2457,7 @@ function puntoEsquina(){
   const _mp = $('miniPlanta'); if(_mp) _mp.classList.add('oculto');
     const bE = $('btnEsquina'); if(bE) bE.textContent = 'Anclar esquina';
     sincronizarAncla(); guardarCalib();
-    $('hudMsg').textContent = 'Anclado por esquina y pared ✓. Si la pared quedó del lado equivocado, tocá "Girar 90°".';
+    $('hudMsg').textContent = 'Anclado por esquina y pared ✓. ¿Salió mal? "Anclar esquina" lo rehace desde cero, "Girar 90°" corrige el lado.';
   }
   refrescarHUD();
 }
@@ -2729,7 +2730,12 @@ $('panelAR').addEventListener('click', ev => {
     if(S.planoModo === 'off') $('miniPlanta').classList.add('oculto');
   }
   if(a==='esquina'){
-    if(S.esquinando){
+    if(S.esquinando === 2){
+      // VOLVER ATRÁS: la esquina marcada estaba mal — se vuelve a elegir
+      S.esquinando = 1; S.esqP1 = null;
+      $('btnEsquina').textContent = 'Esquina: cancelar';
+      $('hudMsg').textContent = '↩ De nuevo: apuntá la retícula al rincón correcto del piso y tocá.';
+    }else if(S.esquinando === 1){
       S.esquinando = 0; S.esqP1 = null;
       $('btnEsquina').textContent = 'Anclar esquina';
       $('hudMsg').textContent = 'Anclaje por esquina cancelado.';
