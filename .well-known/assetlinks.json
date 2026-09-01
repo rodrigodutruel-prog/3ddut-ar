@@ -1,0 +1,8 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "com.dddut.ar",
+    "sha256_cert_fingerprints": ["FE:E2:2E:DE:F3:87:18:6F:CD:09:80:E0:4F:A2:7D:52:EC:99:DB:92:41:42:C1:6C:15:C6:FF:92:AC:FE:10:9E"]
+  }
+}]
