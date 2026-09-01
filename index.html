@@ -432,7 +432,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
    ============================================================ */
 /* THREE UMD embebido arriba */
 
-const VERSION = 'v1.9.1';
+const VERSION = 'v2.0.0';
 
 /* ------------------------------------------------------------
    1. ESTADO
@@ -1170,13 +1170,22 @@ function cargarModelo3D(file){
          refEsq.y < -1 || refEsq.y > _bbb.max.y){
         refEsq.set(_bbb.min.x, 0, _bbb.min.z);
       }
+      // candidatos de ESQUINA (vértices bajos): el imán del selector de
+      // punto de referencia sobre el plano
+      const _pC = geo.getAttribute('position');
+      const _cand = [];
+      const _sC = Math.max(1, Math.floor(_pC.count/9000));
+      for(let _i=0;_i<_pC.count;_i+=_sC){
+        const _y = _pC.getY(_i);
+        if(_y > -0.5 && _y < 3) _cand.push(_pC.getX(_i), _pC.getZ(_i));
+      }
       // silueta en planta para el minimapa (muestra de vértices, X/Z locales)
       const _posM = geo.getAttribute('position');
       const _salto = Math.max(1, Math.floor(_posM.count/3500));
       const _mini = new Float32Array(Math.ceil(_posM.count/_salto)*2);
       let _mk = 0;
       for(let _i=0;_i<_posM.count;_i+=_salto){ _mini[_mk++]=_posM.getX(_i); _mini[_mk++]=_posM.getZ(_i); }
-      S.trazado = { esModelo:true, geo:geo, obra:file.name, medidas:med, tris:nTris, refEsquina:refEsq, miniPts:_mini.slice(0,_mk) };
+      S.trazado = { esModelo:true, geo:geo, obra:file.name, medidas:med, tris:nTris, refEsquina:refEsq, miniPts:_mini.slice(0,_mk), refCandidatos:new Float32Array(_cand) };
       prepararPlanoImagen(S.trazado);
       pintarInfo(S.trazado);
       $('estadoAR').classList.remove('err');
@@ -1294,27 +1303,28 @@ function construirGrupoModelo(tz){
     const kf = Math.min(6, Math.max(1.6, Math.max(tz.medidas.x, tz.medidas.z) * .08));
     const poste = new THREE.Mesh(new THREE.CylinderGeometry(.03*kf, .03*kf, kf, 10),
       new THREE.MeshBasicMaterial({ color:0xE31E24 }));
-    poste.position.copy(tz.refEsquina).add(new THREE.Vector3(0, kf/2, 0));
+    poste.position.set(0, kf/2, 0);
     grpRef.add(poste);
     const bandera = new THREE.Mesh(new THREE.BoxGeometry(.30*kf, .18*kf, .015*kf),
       new THREE.MeshBasicMaterial({ color:0xE31E24, side:THREE.DoubleSide }));
-    bandera.position.copy(tz.refEsquina).add(new THREE.Vector3(.16*kf, kf*.88, 0));
+    bandera.position.set(.16*kf, kf*.88, 0);
     grpRef.add(bandera);
     const etE = etiqueta('ESQUINA REF.', new THREE.Color(0xE31E24));
-    etE.position.copy(tz.refEsquina).add(new THREE.Vector3(0, kf*1.12, 0));
+    etE.position.set(0, kf*1.12, 0);
     etE.scale.set(.22*kf, .055*kf, 1);
     grpRef.add(etE);
     // la PARED DE REFERENCIA marcada en el piso: desde la esquina, la línea
     // ámbar con flecha indica hacia dónde caminar para el segundo toque
     const Lp = Math.min(Math.max(tz.medidas.x * .5, 4), 14);
     const pared = new THREE.ArrowHelper(new THREE.Vector3(1,0,0),
-      tz.refEsquina.clone().add(new THREE.Vector3(0,.03,0)), Lp, 0xFFC400, Math.min(1.2, Lp*.12), Math.min(.7, Lp*.07));
+      new THREE.Vector3(0,.03,0), Lp, 0xFFC400, Math.min(1.2, Lp*.12), Math.min(.7, Lp*.07));
     grpRef.add(pared);
     // el TRÍO DE EJES como en Inventor (X rojo · Y verde arriba · Z azul):
     // es el mismo origen que Rodrigo ve en el CAD — inconfundible
     const Lt = Math.max(1.2, kf * .55);
     [[new THREE.Vector3(1,0,0), 0xE31E24], [new THREE.Vector3(0,1,0), 0x21C063], [new THREE.Vector3(0,0,1), 0x2E6BFF]]
-      .forEach(par => grpRef.add(new THREE.ArrowHelper(par[0], tz.refEsquina.clone(), Lt, par[1], Lt*.22, Lt*.1)));
+      .forEach(par => grpRef.add(new THREE.ArrowHelper(par[0], new THREE.Vector3(0,0,0), Lt, par[1], Lt*.22, Lt*.1)));
+    grpRef.position.copy(tz.refEsquina);
   }
   g.add(grpRef);
   g.userData.grpRef = grpRef;
@@ -1942,11 +1952,12 @@ async function iniciarAR(){
   // todo" marea — el edificio te cae encima en cualquier lado. Acá se arranca
   // DIRECTO en el modo esquina: primero el rincón real, después la pared.
   if(S.trazado && S.trazado.esModelo && Math.max(S.trazado.medidas.x, S.trazado.medidas.z) >= 12){
-    S.esquinando = 1;
+    S.esquinando = 3;                       // paso 0: ELEGIR el punto de referencia
+    S.escala = 1;                            // los modelos van SIEMPRE 1:1
     S.planoModo = 'grande'; S.planZoom = 1; S.planPan = { x:0, y:0 };
     const bM0 = $('btnMini'); if(bM0) bM0.textContent = 'Planta: GRANDE';
-    const bE = $('btnEsquina'); if(bE) bE.textContent = 'Esquina: cancelar';
-    $('hudMsg').textContent = 'MODELO GRANDE: andá a la ESQUINA de referencia real del galpón, apuntá la retícula al rincón del piso y tocá. Después vas a marcar la pared.';
+    const bE = $('btnEsquina'); if(bE) bE.textContent = '✔ Usar este punto';
+    $('hudMsg').textContent = '¿Qué punto de referencia usás? La tríada roja marca el ORIGEN del CAD. Si querés OTRA esquina: hacé zoom (2 dedos) y tocala en el plano — tiene imán a las esquinas. Cuando esté bien: "✔ Usar este punto".';
   }
 
   // tap → anclar (o medir). Escuchamos el 'select' de la sesión.
@@ -2443,7 +2454,43 @@ function agregarPuntoMedicion(){
    altura (cian→naranja) · metal (chapa galvanizada realista) ·
    caras (cada orientación un tono: se distinguen los planos)
    ------------------------------------------------------------ */
-const PIELES = ['altura', 'metal', 'caras'];
+const PIELES = ['altura', 'metal', 'caras', 'piezas'];
+// PIEZAS: qué triángulos están conectados entre sí = una pieza física
+// (cada máquina, pared o cercha del STL por separado). Union-find.
+function componentesDe(geo){
+  if(geo.userData.comp) return geo.userData.comp;
+  const pos = geo.getAttribute('position');
+  const nV = pos.count;
+  if(nV > 1600000) return null;                   // demasiado para el celu
+  const parent = new Int32Array(nV);
+  for(let i=0;i<nV;i++) parent[i] = i;
+  const find = i => { while(parent[i] !== i){ parent[i] = parent[parent[i]]; i = parent[i]; } return i; };
+  const uni = (a,b) => { a = find(a); b = find(b); if(a !== b) parent[b] = a; };
+  const idx = geo.index;
+  if(idx){
+    for(let i=0;i<idx.count;i+=3){ const a=idx.getX(i), b=idx.getX(i+1), d=idx.getX(i+2); uni(a,b); uni(b,d); }
+  }else{
+    // STL sin índice: primero se sueldan los vértices coincidentes (0,5 mm)
+    const map = new Map();
+    for(let i=0;i<nV;i++){
+      const k = Math.round(pos.getX(i)*2000) + '|' + Math.round(pos.getY(i)*2000) + '|' + Math.round(pos.getZ(i)*2000);
+      const j = map.get(k);
+      if(j === undefined) map.set(k, i); else uni(i, j);
+    }
+    for(let i=0;i+2<nV;i+=3){ uni(i, i+1); uni(i+1, i+2); }
+  }
+  const comp = new Int32Array(nV);
+  const orden = new Map();                          // raíz → número de pieza (0,1,2…)
+  for(let i=0;i<nV;i++){
+    const r = find(i);
+    let q = orden.get(r);
+    if(q === undefined){ q = orden.size; orden.set(r, q); }
+    comp[i] = q;
+  }
+  geo.userData.comp = comp;
+  geo.userData.nPiezas = orden.size;
+  return comp;
+}
 function hornearPiel(geo, modo, alto){
   const pieles = geo.userData.pieles = geo.userData.pieles || {};
   if(pieles[modo]) return pieles[modo];
@@ -2459,6 +2506,11 @@ function hornearPiel(geo, modo, alto){
       // chapa: gris frío con un brillo direccional más marcado
       const esp = Math.pow(Math.abs(nv.dot(L)), 8) * .35;
       c.setRGB(.72*lam + esp, .75*lam + esp, .78*lam + esp);
+    }else if(modo === 'piezas'){
+      const comp = geo.userData.comp;
+      const raiz = comp ? comp[i] : 0;
+      c.setHSL((raiz * 0.6180339887) % 1, .62, .48);
+      c.multiplyScalar(.5 + .5*lam);
     }else if(modo === 'caras'){
       // cada orientación un tono: azimut de la normal → matiz
       const az = Math.atan2(nv.z, nv.x);
@@ -2476,6 +2528,11 @@ function hornearPiel(geo, modo, alto){
 function cambiarPiel(){
   if(!S.trazado || !S.trazado.esModelo) return;
   S.piel = PIELES[(PIELES.indexOf(S.piel || 'altura') + 1) % PIELES.length];
+  if(S.piel === 'piezas'){
+    const comp = componentesDe(S.trazado.geo);
+    if(!comp){ S.piel = 'altura'; }                // modelo gigante sin decimar: no da
+    else delete S.trazado.geo.userData.pieles.piezas;   // rehornear con los comp listos
+  }
   const attr = hornearPiel(S.trazado.geo, S.piel, S.trazado.medidas.y);
   S.trazado.geo.setAttribute('color', attr);
   attr.needsUpdate = true;
@@ -2491,6 +2548,7 @@ function cambiarPiel(){
    su pared acompaña la real. Galpones enteros, ubicados en serio.
    ------------------------------------------------------------ */
 function puntoEsquina(){
+  if(S.esquinando === 3) return;                    // paso 0: los toques eligen sobre el plano
   if(S._gesMovio){ S._gesMovio = false; return; }   // fue un arrastre del plano, no una marca
   if(!S.reticula || !S.reticula.visible || !S.grupo || !S.trazado || !S.trazado.refEsquina){
     $('hudMsg').textContent = 'Apuntá la retícula al piso (tiene que verse el aro rojo) y tocá.';
@@ -2595,6 +2653,7 @@ function dibujarMiniPlanta(){
     const kFit = Math.min(W, H) / (2 * M.H) * .92 * zoom;
     const dib = 2 * M.H * kFit;
     const ox = W/2 - dib/2 + panX, oy = H/2 - dib/2 + panY;
+    S._planPrev = { ox: ox, oy: oy, kFit: kFit, M: M };   // para elegir esquina tocando el plano
     g2.globalAlpha = .96;
     g2.drawImage(S.trazado.planImg, ox, oy, dib, dib);
     g2.globalAlpha = 1;
@@ -2734,6 +2793,30 @@ function gesFin(ev){
   if(GES.punteros.size < 2){ GES.angPrev = null; GES.cyPrev = null; }
   if(S.anclado) guardarCalib();
 }
+$('gestos').addEventListener('pointerup', ev => {
+  // PASO 0 del anclaje: un TAP sobre el plano elige el punto de referencia
+  if(S.esquinando === 3 && !S._gesMovio && S._planPrev && S.trazado && S.trazado.refCandidatos){
+    const pp = S._planPrev, M = pp.M;
+    const lx = (ev.clientX - pp.ox) / pp.kFit + (M.cx - M.H);
+    const lz = (ev.clientY - pp.oy) / pp.kFit + (M.cz - M.H);
+    const rIman = 26 / pp.kFit;                     // imán: 26 px en unidades del modelo
+    const cds = S.trazado.refCandidatos;
+    let mejor = -1, md = rIman * rIman;
+    for(let i = 0; i < cds.length; i += 2){
+      const dx = cds[i] - lx, dz = cds[i+1] - lz;
+      const dd = dx*dx + dz*dz;
+      if(dd < md){ md = dd; mejor = i; }
+    }
+    if(mejor >= 0){
+      S.trazado.refEsquina.x = cds[mejor];
+      S.trazado.refEsquina.z = cds[mejor+1];
+      if(S.grupo && S.grupo.userData.grpRef) S.grupo.userData.grpRef.position.copy(S.trazado.refEsquina);
+      $('hudMsg').textContent = 'Punto de referencia movido a esa esquina ✔. Ajustá con más zoom si querés, y después: "✔ Usar este punto".';
+    }else{
+      $('hudMsg').textContent = 'Ahí no hay ninguna esquina del modelo: hacé más zoom y tocá justo sobre una esquina del plano.';
+    }
+  }
+});
 $('gestos').addEventListener('pointerup', gesFin);
 $('gestos').addEventListener('pointercancel', gesFin);
 
@@ -2824,19 +2907,23 @@ $('panelAR').addEventListener('click', ev => {
   if(a==='maq'){  S.verMaquinas  = !S.verMaquinas; }
   if(a==='piso'){ S.verPiso = !S.verPiso; }
   if(a==='opac'){
-    S.opacidad = S.opacidad >= .85 ? .3 : S.opacidad + .15;
-    S.grupo.traverse(o => {
-      if(o.userData.esTubo) o.material.opacity = S.opacidad;
-      if(o.userData.esModelo3D){
-        // ciclo sólido ↔ fantasma: sólido (opaco, con oclusión propia) para
-        // interpretar la pieza; fantasma para ver la obra a través
-        const op = S.opacidad >= .85 ? 1 : S.opacidad;
-        o.material.opacity = op;
-        o.material.transparent = op < .99;
-        o.material.depthWrite = op >= .99;
-        o.material.needsUpdate = true;
-      }
-    });
+    if(S.trazado && S.trazado.esModelo){
+      const niveles = [1, .7, .45, .25];
+      S.opNivel = ((S.opNivel == null ? 0 : S.opNivel) + 1) % niveles.length;
+      const op = niveles[S.opNivel];
+      S.grupo.traverse(o => {
+        if(o.userData.esModelo3D){
+          o.material.opacity = op;
+          o.material.transparent = op < .99;
+          o.material.depthWrite = op >= .99;
+          o.material.needsUpdate = true;
+        }
+      });
+      $('hudMsg').textContent = 'Transparencia: ' + Math.round(op*100) + '%';
+    }else{
+      S.opacidad = S.opacidad >= .85 ? .3 : S.opacidad + .15;
+      S.grupo.traverse(o => { if(o.userData.esTubo) o.material.opacity = S.opacidad; });
+    }
   }
   if(a==='reancla'){
     if(SENS.activo){
@@ -2878,7 +2965,12 @@ $('panelAR').addEventListener('click', ev => {
     if(S.planoModo === 'off') $('miniPlanta').classList.add('oculto');
   }
   if(a==='esquina'){
-    if(S.esquinando === 2){
+    if(S.esquinando === 3){
+      // punto de referencia confirmado → a marcar el rincón real
+      S.esquinando = 1;
+      $('btnEsquina').textContent = 'Esquina: cancelar';
+      $('hudMsg').textContent = 'Punto confirmado ✔. Ahora andá a ESA esquina real del galpón, apuntá la retícula al rincón (pared = retícula cian, más preciso) y tocá.';
+    }else if(S.esquinando === 2){
       // VOLVER ATRÁS: la esquina marcada estaba mal — se vuelve a elegir
       S.esquinando = 1; S.esqP1 = null;
       $('btnEsquina').textContent = 'Esquina: cancelar';
@@ -2925,6 +3017,10 @@ $('panelAR').addEventListener('click', ev => {
   if(a==='dist+'){ SENS.dist = Math.min(60, SENS.dist + 1); if(SENS.activo) colocarAlFrente(); }
   if(a==='frente'){ colocarAlFrente(); }
   if(a==='esc'){
+    if(S.trazado && S.trazado.esModelo){
+      $('hudMsg').textContent = 'El modelo 3D va SIEMPRE en escala 1:1 — es la obra real, no una maqueta.';
+      return;
+    }
     const escalas = [1,20,50];
     S.escala = escalas[(escalas.indexOf(S.escala)+1) % escalas.length];
     aplicarEscala();
