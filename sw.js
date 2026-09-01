@@ -1,5 +1,5 @@
 /* Service worker de 3DDUT AR — cachea todo para uso offline en obra */
-const CACHE = '3ddut-ar-v1';
+const CACHE = '3ddut-ar-v2';
 const ASSETS = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
@@ -8,15 +8,34 @@ self.addEventListener('install', e => {
 
 self.addEventListener('activate', e => {
   e.waitUntil(
-    caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k))))
+    caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE && k !== '3ddut-compartido').map(k => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
 
 self.addEventListener('fetch', e => {
+  const url = new URL(e.request.url);
+
+  // ARCHIVO COMPARTIDO (share target): WhatsApp/Archivos manda el STL/OBJ por
+  // POST; lo guardamos y redirigimos a la app, que lo levanta con #compartido.
+  if(e.request.method === 'POST' && url.pathname.endsWith('/recibir')){
+    e.respondWith((async () => {
+      try{
+        const fd = await e.request.formData();
+        const f = fd.get('modelo');
+        if(f){
+          const cache = await caches.open('3ddut-compartido');
+          await cache.put('./_compartido', new Response(f, {
+            headers: { 'X-Nombre': encodeURIComponent(f.name || 'modelo.stl') }
+          }));
+        }
+      }catch(err){}
+      return Response.redirect('./index.html#compartido', 303);
+    })());
+    return;
+  }
+
   if(e.request.method !== 'GET') return;
-  // el HTML va red-primero: las actualizaciones llegan apenas hay señal;
-  // sin señal sigue sirviendo la copia cacheada
   const esPagina = e.request.mode === 'navigate' || e.request.url.endsWith('/index.html');
   if(esPagina){
     e.respondWith(

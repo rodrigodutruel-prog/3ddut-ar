@@ -50,7 +50,9 @@ body{
   overscroll-behavior:none;
 }
 .oculto{ display:none !important; }
-#gestos{ position:fixed; top:0; left:0; right:0; bottom:0; z-index:46; touch-action:none; }
+#gestos{ position:fixed; top:0; left:0; right:0; bottom:0; z-index:46; touch-action:none; pointer-events:auto; }
+.panel-ar{ position:relative; z-index:48; }
+.hud{ position:relative; z-index:47; }
 .cv-marcador{ width:min(160px,40vw); height:auto; border-radius:8px; border:1px solid var(--borde); image-rendering:pixelated; }
 .lbl-inline{ display:flex; align-items:center; gap:6px; font-size:.9rem; color:var(--txt2); }
 .inp-num{ width:70px; min-height:44px; font-size:16px; font-family:var(--t-mono); text-align:center;
@@ -418,7 +420,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
    ============================================================ */
 /* THREE UMD embebido arriba */
 
-const VERSION = 'v1.0.0';
+const VERSION = 'v1.1.0';
 
 /* ------------------------------------------------------------
    1. ESTADO
@@ -1087,26 +1089,47 @@ function cargarModelo3D(file){
 
 function construirGrupoModelo(tz){
   const g = new THREE.Group();
-  const col = new THREE.Color(0x00AEEF).lerp(new THREE.Color(0xc9ced4), 0.55);
-  const mat = new THREE.MeshStandardMaterial({
-    color:col, metalness:.7, roughness:.42,
-    emissive:col, emissiveIntensity:.15,
-    transparent:true, opacity:S.opacidad, side:THREE.DoubleSide, depthWrite:false
+
+  // COLORES HORNEADOS por vértice: degradé 3DDUT (cian abajo → naranja
+  // arriba) multiplicado por una luz fija. Con la luz metida en el color,
+  // el material puede ser Basic (sin cálculo de luces por cuadro): la pieza
+  // se LEE — cada cara con su tono — y además rinde mucho más rápido.
+  if(!tz.geo.getAttribute('color')){
+    const pos = tz.geo.getAttribute('position');
+    const nrm = tz.geo.getAttribute('normal');
+    const nV = pos.count, col = new Float32Array(nV*3);
+    const cBajo = new THREE.Color(0x00C2D1), cAlto = new THREE.Color(0xFF6A13);
+    const L = new THREE.Vector3(.45,.78,.42).normalize();
+    const c = new THREE.Color(), nv = new THREE.Vector3();
+    const alto = Math.max(tz.medidas.y, .001);
+    for(let i=0;i<nV;i++){
+      c.copy(cBajo).lerp(cAlto, Math.max(0, Math.min(1, pos.getY(i)/alto)));
+      nv.set(nrm.getX(i), nrm.getY(i), nrm.getZ(i));
+      const lam = .42 + .58*Math.abs(nv.dot(L));   // luz fija horneada (dos caras)
+      col[i*3] = c.r*lam; col[i*3+1] = c.g*lam; col[i*3+2] = c.b*lam;
+    }
+    tz.geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  }
+  const mat = new THREE.MeshBasicMaterial({
+    vertexColors:true, side:THREE.DoubleSide,
+    transparent:false, opacity:1, depthWrite:true
   });
   const mesh = new THREE.Mesh(tz.geo, mat);
-  mesh.userData.esTubo = true;   // así responde al botón Opacidad
+  mesh.userData.esModelo3D = true;   // el botón Opacidad lo alterna sólido/fantasma
   g.add(mesh);
 
-  // aristas: es lo que hace que la pieza se lea como holograma sobre la nave.
-  // Con modelos gigantes se saltea para no matar el celu.
-  if(tz.tris < 120000){
-    try{
-      const bordes = new THREE.LineSegments(
-        new THREE.EdgesGeometry(tz.geo, 28),
-        new THREE.LineBasicMaterial({ color:0x00AEEF, transparent:true, opacity:.85 })
-      );
-      g.add(bordes);
-    }catch(e){}
+  // aristas blancas: los pliegues y gajos se leen como en el plano.
+  // Se construyen DESPUÉS del primer cuadro para no trabar la colocación.
+  if(tz.tris < 150000){
+    setTimeout(() => {
+      try{
+        const bordes = new THREE.LineSegments(
+          new THREE.EdgesGeometry(tz.geo, 24),
+          new THREE.LineBasicMaterial({ color:0xf2f7fa, transparent:true, opacity:.9 })
+        );
+        g.add(bordes);
+      }catch(e){}
+    }, 60);
   }
 
   const grilla = new THREE.GridHelper(Math.max(tz.medidas.x, tz.medidas.z) + 2, 20, 0xE31E24, 0x333940);
@@ -1302,7 +1325,7 @@ async function icpYaw(nube, modeloLocal, rotY0, pos0, escala, avance){
   // 1) barrido grueso (con una submuestra: alcanza para rankear)
   const nubeB = nube.filter((p,i) => i % 2 === 0);
   const cand = [];
-  const giros = [-30,-20,-10,0,10,20,30].map(d => d*Math.PI/180);
+  const giros = [-45,-30,-15,0,15,30,45].map(d => d*Math.PI/180);
   const pasos = [-0.15,-0.075,0,0.075,0.15];
   let hecho = 0, total = giros.length*pasos.length*pasos.length;
   for(const dg of giros){
@@ -1539,8 +1562,8 @@ async function iniciarAR(){
   if(!S.trazado) return;
 
   const canvas = document.createElement('canvas');
-  const renderer = new THREE.WebGLRenderer({ canvas, alpha:true, antialias:true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  const renderer = new THREE.WebGLRenderer({ canvas, alpha:true, antialias:false });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.xr.enabled = true;
   document.body.appendChild(canvas);
@@ -1788,12 +1811,16 @@ async function iniciarAR(){
       }catch(e){}
     }
 
-    // auto-ajuste: juntar nube de puntos de varios frames y encajar
+    // auto-ajuste: juntar nube de puntos de varios frames y encajar.
+    // Se capturan cuadros salteados durante ~1,5 s MIENTRAS el usuario se
+    // mueve: la profundidad por movimiento mejora mucho con paralaje.
     if(frame && S.autoPend > 0){
-      const pts = nubeDesdeFrame(frame);
-      if(pts) S.autoNube.push(...pts);
+      if(S.autoPend % 3 === 0 && S.autoNube.length < 22000){
+        const pts = nubeDesdeFrame(frame);
+        if(pts) S.autoNube.push(...pts);
+      }
       S.autoPend--;
-      $('hudMsg').textContent = 'Capturando profundidad… ' + S.autoNube.length + ' puntos';
+      $('hudMsg').textContent = 'Capturando profundidad… ' + S.autoNube.length + ' puntos — seguí moviéndote despacio';
       if(S.autoPend === 0) correrAutoAjuste();
     }
 
@@ -2272,7 +2299,18 @@ $('panelAR').addEventListener('click', ev => {
   if(a==='piso'){ S.verPiso = !S.verPiso; }
   if(a==='opac'){
     S.opacidad = S.opacidad >= .85 ? .3 : S.opacidad + .15;
-    S.grupo.traverse(o => { if(o.userData.esTubo) o.material.opacity = S.opacidad; });
+    S.grupo.traverse(o => {
+      if(o.userData.esTubo) o.material.opacity = S.opacidad;
+      if(o.userData.esModelo3D){
+        // ciclo sólido ↔ fantasma: sólido (opaco, con oclusión propia) para
+        // interpretar la pieza; fantasma para ver la obra a través
+        const op = S.opacidad >= .85 ? 1 : S.opacidad;
+        o.material.opacity = op;
+        o.material.transparent = op < .99;
+        o.material.depthWrite = op >= .99;
+        o.material.needsUpdate = true;
+      }
+    });
   }
   if(a==='reancla'){
     if(SENS.activo){
@@ -2296,8 +2334,8 @@ $('panelAR').addEventListener('click', ev => {
     if(!S.oclDisponible){ $('hudMsg').textContent = 'Este equipo no entrega profundidad: el auto-ajuste no está disponible.'; }
     else if(!S.anclado){ $('hudMsg').textContent = 'Primero anclá el modelo más o menos sobre la pieza real.'; }
     else if(!S.autoCorriendo){
-      S.autoNube = []; S.autoPend = 6;
-      $('hudMsg').textContent = 'Auto-ajuste: quedate quieto apuntando a la pieza…';
+      S.autoNube = []; S.autoPend = 45;
+      $('hudMsg').textContent = 'Auto-ajuste: movete DESPACIO alrededor de la pieza (1-2 pasos) mientras capturo…';
     }
   }
   if(a==='marcador'){
@@ -2448,8 +2486,8 @@ async function iniciarARSensor(){
 
   // 3. escena encima del video
   const canvas = document.createElement('canvas');
-  const renderer = new THREE.WebGLRenderer({ canvas, alpha:true, antialias:true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  const renderer = new THREE.WebGLRenderer({ canvas, alpha:true, antialias:false });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
   renderer.setSize(window.innerWidth, window.innerHeight);
   canvas.style.position='fixed'; canvas.style.top='0'; canvas.style.left='0';
   canvas.style.zIndex='42';
@@ -2724,6 +2762,25 @@ $('btnTema').addEventListener('click', () => {
 });
 
 revisarSoporte();
+
+// ARCHIVO COMPARTIDO desde otra app (WhatsApp / Archivos → Compartir → 3DDUT AR):
+// el service worker lo dejó guardado y nos mandó acá con #compartido.
+if(location.hash === '#compartido'){
+  (async () => {
+    try{
+      const cache = await caches.open('3ddut-compartido');
+      const r = await cache.match('./_compartido');
+      if(r){
+        const nombre = decodeURIComponent(r.headers.get('X-Nombre') || 'modelo.stl');
+        const blob = await r.blob();
+        await cache.delete('./_compartido');
+        cargarModelo3D(new File([blob], nombre));
+        $('estadoAR').textContent = 'Modelo recibido: ' + nombre + ' — tocá Iniciar AR.';
+      }
+      history.replaceState(null, '', location.pathname);
+    }catch(e){ mostrarError('Archivo compartido: ' + (e.message || e)); }
+  })();
+}
 
 </script>
 <script>
