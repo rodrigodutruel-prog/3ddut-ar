@@ -445,7 +445,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
    ============================================================ */
 /* THREE UMD embebido arriba */
 
-const VERSION = 'v2.4.0';
+const VERSION = 'v2.5.0';
 
 /* ------------------------------------------------------------
    1. ESTADO
@@ -1371,6 +1371,29 @@ function construirGrupoModelo(tz){
   const mesh = new THREE.Mesh(tz.geo, mat);
   mesh.userData.esModelo3D = true;   // el botón Opacidad lo alterna sólido/fantasma
   g.add(mesh);
+  g.userData.matLuz = mat;           // la estimación de luz ambiente modula este material
+
+  // sombra suave bajo el modelo — solo visible en modo MAQUETA (asienta la
+  // pieza sobre la mesa); a escala 1:1 sería una mancha gigante en el piso
+  try{
+    const cvS = document.createElement('canvas'); cvS.width = cvS.height = 256;
+    const cxS = cvS.getContext('2d');
+    const grS = cxS.createRadialGradient(128, 128, 20, 128, 128, 128);
+    grS.addColorStop(0, 'rgba(0,0,0,.42)'); grS.addColorStop(.7, 'rgba(0,0,0,.16)'); grS.addColorStop(1, 'rgba(0,0,0,0)');
+    cxS.fillStyle = grS; cxS.fillRect(0, 0, 256, 256);
+    const texS = new THREE.CanvasTexture(cvS);
+    const ladoS = Math.max(tz.medidas.x, tz.medidas.z) * 1.25;
+    const sombra = new THREE.Mesh(
+      new THREE.PlaneGeometry(ladoS, ladoS),
+      new THREE.MeshBasicMaterial({ map: texS, transparent: true, depthWrite: false })
+    );
+    sombra.rotation.x = -Math.PI/2;
+    sombra.position.y = 0.003;
+    sombra.renderOrder = -1;
+    sombra.visible = false;
+    g.add(sombra);
+    g.userData.grpSombra = sombra;
+  }catch(e){}
 
   // aristas blancas: los pliegues y gajos se leen como en el plano.
   // Se construyen DESPUÉS del primer cuadro para no trabar la colocación.
@@ -1768,6 +1791,7 @@ function aplicarEscala(){
   if(!S.grupo) return;
   const k = 1 / S.escala;
   S.grupo.scale.setScalar(k);
+  if(S.grupo.userData.grpSombra) S.grupo.userData.grpSombra.visible = S.escala > 1;
 }
 
 /* ------------------------------------------------------------
@@ -1909,7 +1933,7 @@ async function iniciarAR(){
   // Reintentos degradados: si una feature no está soportada, probamos sin ella
   // anchors y depth-sensing van como OPCIONALES: si el equipo no los tiene,
   // la sesión arranca igual y la app degrada sola (sin persistencia / sin oclusión)
-  const extras = ['anchors','depth-sensing'];
+  const extras = ['anchors','depth-sensing','light-estimation'];
   // marcador impreso: image-tracking (Chrome lo tiene bajo chrome://flags/#webxr-incubations)
   const marcadorCfg = {};
   if(S.marcadorBitmap){
@@ -1963,7 +1987,7 @@ async function iniciarAR(){
   try{
     const nat = (typeof XRWebGLLayer !== 'undefined' && XRWebGLLayer.getNativeFramebufferScaleFactor)
       ? XRWebGLLayer.getNativeFramebufferScaleFactor(session) : 1;
-    renderer.xr.setFramebufferScaleFactor(Math.min(Math.max(nat || 1, 1), 1.4));
+    renderer.xr.setFramebufferScaleFactor(Math.min(Math.max(nat || 1, 1), 2));
   }catch(e){}
   renderer.xr.setReferenceSpaceType(usaFloor ? 'local-floor' : 'local');
   try{
@@ -1983,6 +2007,14 @@ async function iniciarAR(){
   }
   S.usaFloor = usaFloor;
   S.refSpaceLocal = renderer.xr.getReferenceSpace();
+
+  // luz ambiente estimada por ARCore: el modelo toma el brillo del lugar real
+  S.lightProbe = null; S._luzK = 1;
+  try{
+    if(typeof session.requestLightProbe === 'function'){
+      S.lightProbe = await session.requestLightProbe();
+    }
+  }catch(e){ S.lightProbe = null; }
 
   // hit-test si la sesión lo permite; si no, colocación manual a 2 m
   S.hitSource = null;
@@ -2051,7 +2083,11 @@ async function iniciarAR(){
   // MODELO GRANDE (un galpón): el flujo normal de "tocá el piso y aparece
   // todo" marea — el edificio te cae encima en cualquier lado. Acá se arranca
   // DIRECTO en el modo esquina: primero el rincón real, después la pared.
-  if(S.trazado && S.trazado.esModelo && (S.trazado.esPlanObra || Math.max(S.trazado.medidas.x, S.trazado.medidas.z) >= 12)){
+  if(S.trazado && S.trazado.esModelo && S.escala > 1){
+    // MAQUETA: sin puntos de referencia — apuntas a la mesa/piso y tocas
+    $('hudMsg').textContent = 'Maqueta 1:' + S.escala + ' — apunta a la mesa o al piso hasta ver la reticula y toca para apoyarla. 1 dedo mueve, 2 dedos giran.';
+  }
+  else if(S.trazado && S.trazado.esModelo && (S.trazado.esPlanObra || Math.max(S.trazado.medidas.x, S.trazado.medidas.z) >= 12)){
     S.esquinando = 3;  S.refP2 = null;      // paso 0: ELEGIR el punto de referencia
     S.escala = 1;                            // los modelos van SIEMPRE 1:1
     S.planoModo = 'grande'; S.planZoom = 1; S.planPan = { x:0, y:0 };
@@ -2209,6 +2245,20 @@ async function iniciarAR(){
       }else if(!S.ancListo && S.anclado){
         S.grupo.visible = false;   // todavía no re-localizó: no mostrar en cualquier lado
       }
+    }
+
+    // luz ambiente: modular el brillo del modelo con la luz real del lugar
+    if(frame && S.lightProbe && S.grupo && S.grupo.userData.matLuz && typeof frame.getLightEstimate === 'function'){
+      try{
+        const le = frame.getLightEstimate(S.lightProbe);
+        if(le && le.primaryLightIntensity){
+          const pi = le.primaryLightIntensity;
+          const i = Math.max(pi.x, pi.y, pi.z);
+          const objetivo = Math.min(1.2, Math.max(.55, .45 + Math.cbrt(i) * .65));
+          S._luzK += (objetivo - S._luzK) * .08;
+          S.grupo.userData.matLuz.color.setScalar(S._luzK);
+        }
+      }catch(e){}
     }
 
     // oclusión: profundidad real → depth buffer
@@ -2867,7 +2917,7 @@ function obtenerRenderer(){
     _rendererUnico = new THREE.WebGLRenderer({ canvas: cv, alpha: true, antialias: true, powerPreference: 'high-performance' });
     _rendererUnico.xr.enabled = true;
   }
-  _rendererUnico.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+  _rendererUnico.setPixelRatio(Math.min(window.devicePixelRatio, 2.25));
   _rendererUnico.setSize(window.innerWidth, window.innerHeight);
   return _rendererUnico;
 }
@@ -2876,7 +2926,7 @@ function cerrarAR(){
   const r = S.renderer;
   S.renderer = null; S.session = null; S.hitSource = null;
   S.grupo = null; S.anclado = false;
-  S.anchor = null; S.ancListo = false; S.ultimoHit = null;
+  S.anchor = null; S.ancListo = false; S.ultimoHit = null; S.lightProbe = null;
   S.midiendo = false; S.medGrp = null; S.medPts = [];
   S.esquinando = 0; S.esqP1 = null; S.refP2 = null;
   S.escuadrando = false; S.escPts = []; S.autoPend = 0; S.autoNube = null; S.modeloPts = null; S.autoCorriendo = false; S.marcadorModo = false; S.nubeAcum = null;
@@ -3196,11 +3246,13 @@ $('panelAR').addEventListener('click', ev => {
   if(a==='dist+'){ SENS.dist = Math.min(60, SENS.dist + 1); if(SENS.activo) colocarAlFrente(); }
   if(a==='frente'){ colocarAlFrente(); }
   if(a==='esc'){
-    if(S.trazado && S.trazado.esModelo){
-      $('hudMsg').textContent = 'El modelo 3D va SIEMPRE en escala 1:1 — es la obra real, no una maqueta.';
-      return;
-    }
     const escalas = [1,20,50];
+    if(S.trazado && S.trazado.esModelo && S.esquinando){
+      // estaba eligiendo referencia y pasa a maqueta: cancelar ese flujo
+      S.esquinando = 0; S.esqP1 = null; S.refP2 = null;
+      S.planoModo = 'off'; $('miniPlanta').classList.add('oculto');
+      const bEE = $('btnEsquina'); if(bEE){ bEE.classList.remove('destacado'); bEE.textContent = 'Anclar esquina'; }
+    }
     S.escala = escalas[(escalas.indexOf(S.escala)+1) % escalas.length];
     aplicarEscala();
     if(SENS.activo){ SENS.dist = (S.escala===1) ? 8 : 2.5; colocarAlFrente(); }
