@@ -385,6 +385,10 @@ body{
         <button class="bctrl" data-act="piso">Marcas de piso</button>
       </div>
       <div class="pgrupo">
+        <button class="bctrl" data-act="color" id="btnColor">Color: altura</button>
+        <button class="bctrl" data-act="bandera" id="btnBandera">Bandera: ON</button>
+      </div>
+      <div class="pgrupo">
         <button class="bctrl" data-act="ocl" id="btnOcl">Oclusión: ON</button>
         <button class="bctrl" data-act="dist-">− cerca</button>
         <button class="bctrl" data-act="dist+">+ lejos</button>
@@ -421,7 +425,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
    ============================================================ */
 /* THREE UMD embebido arriba */
 
-const VERSION = 'v1.3.0';
+const VERSION = 'v1.4.0';
 
 /* ------------------------------------------------------------
    1. ESTADO
@@ -1169,6 +1173,7 @@ function construirGrupoModelo(tz){
   // arriba) multiplicado por una luz fija. Con la luz metida en el color,
   // el material puede ser Basic (sin cálculo de luces por cuadro): la pieza
   // se LEE — cada cara con su tono — y además rinde mucho más rápido.
+  tz.geo.userData.pieles = tz.geo.userData.pieles || {};
   if(!tz.geo.getAttribute('color')){
     const pos = tz.geo.getAttribute('position');
     const nrm = tz.geo.getAttribute('normal');
@@ -1184,6 +1189,7 @@ function construirGrupoModelo(tz){
       col[i*3] = c.r*lam; col[i*3+1] = c.g*lam; col[i*3+2] = c.b*lam;
     }
     tz.geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    tz.geo.userData.pieles.altura = tz.geo.getAttribute('color');
   }
   const mat = new THREE.MeshBasicMaterial({
     vertexColors:true, side:THREE.DoubleSide,
@@ -1214,6 +1220,8 @@ function construirGrupoModelo(tz){
 
   // BANDERA de la esquina de referencia: es la esquina que se apoya sobre la
   // esquina real del galpón con el botón "Anclar esquina".
+  const grpRef = new THREE.Group();
+  grpRef.userData.rol = 'referencia';
   if(tz.refEsquina){
     // la bandera escala con el modelo: en un galpón de 70 m una bandera de
     // 1,6 m desaparece — acá mide hasta 6 m de alto
@@ -1221,22 +1229,24 @@ function construirGrupoModelo(tz){
     const poste = new THREE.Mesh(new THREE.CylinderGeometry(.03*kf, .03*kf, kf, 10),
       new THREE.MeshBasicMaterial({ color:0xE31E24 }));
     poste.position.copy(tz.refEsquina).add(new THREE.Vector3(0, kf/2, 0));
-    g.add(poste);
+    grpRef.add(poste);
     const bandera = new THREE.Mesh(new THREE.BoxGeometry(.30*kf, .18*kf, .015*kf),
       new THREE.MeshBasicMaterial({ color:0xE31E24, side:THREE.DoubleSide }));
     bandera.position.copy(tz.refEsquina).add(new THREE.Vector3(.16*kf, kf*.88, 0));
-    g.add(bandera);
+    grpRef.add(bandera);
     const etE = etiqueta('ESQUINA REF.', new THREE.Color(0xE31E24));
     etE.position.copy(tz.refEsquina).add(new THREE.Vector3(0, kf*1.12, 0));
     etE.scale.set(.22*kf, .055*kf, 1);
-    g.add(etE);
+    grpRef.add(etE);
     // la PARED DE REFERENCIA marcada en el piso: desde la esquina, la línea
     // ámbar con flecha indica hacia dónde caminar para el segundo toque
     const Lp = Math.min(Math.max(tz.medidas.x * .5, 4), 14);
     const pared = new THREE.ArrowHelper(new THREE.Vector3(1,0,0),
       tz.refEsquina.clone().add(new THREE.Vector3(0,.03,0)), Lp, 0xFFC400, Math.min(1.2, Lp*.12), Math.min(.7, Lp*.07));
-    g.add(pared);
+    grpRef.add(pared);
   }
+  g.add(grpRef);
+  g.userData.grpRef = grpRef;
 
   const grpEtiq = new THREE.Group(), grpMaq = new THREE.Group();
   const et = etiqueta(tz.obra.replace(/\.(stl|obj)$/i,''), new THREE.Color(0x00AEEF));
@@ -1457,6 +1467,10 @@ async function icpYaw(nube, modeloLocal, rotY0, pos0, escala, avance){
     if(!mejor || r.score > mejor.score) mejor = r;
   }
   if(!mejor) return { ok:false, motivo: motivo || 'No se pudo encajar.' };
+  // COINCIDENCIA: de los puntos reales que están cerca del modelo (<15 cm),
+  // qué porcentaje quedó pegado a la superficie (<2,5 cm). 100% = calza justo.
+  const cerca = _puntajePose(nube, modeloLocal, grillas, mejor.rotY, mejor.pos, escala, 0.15);
+  mejor.pct = Math.round(100 * mejor.inliers / Math.max(1, cerca.n));
   return mejor;
 }
 
@@ -2209,16 +2223,29 @@ async function correrAutoAjuste(){
     if(!S.modeloPts) S.modeloPts = muestrearModelo(S.grupo, 3000);
     const nube = S.autoNube || [];
     $('hudMsg').textContent = 'Encajando… (' + nube.length + ' puntos)';
-    const r = await icpYaw(nube, S.modeloPts, S.rotY, S.grupo.position.clone(), S.escala,
-      f => { $('hudMsg').textContent = 'Encajando… ' + Math.round(f*100) + '%'; });
-    if(!r.ok){ $('hudMsg').textContent = 'Auto-ajuste: ' + r.motivo; return; }
+    // RONDAS DE REFINAMIENTO: se busca el calce y se vuelve a encajar desde el
+    // resultado hasta que la coincidencia deja de mejorar (ideal ≥95%).
+    let r = null, rotY = S.rotY, pos = S.grupo.position.clone();
+    for(let ronda = 0; ronda < 3; ronda++){
+      const ri = await icpYaw(nube, S.modeloPts, rotY, pos, S.escala,
+        f => { $('hudMsg').textContent = 'Encajando (ronda ' + (ronda+1) + ')… ' + Math.round(f*100) + '%'; });
+      if(!ri.ok){ if(!r){ $('hudMsg').textContent = 'Auto-ajuste: ' + ri.motivo; return; } break; }
+      if(r && ri.pct <= r.pct + 1){ if(ri.pct > r.pct) r = ri; break; }
+      r = ri; rotY = ri.rotY; pos = ri.pos.clone();
+      if(r.pct >= 95) break;
+    }
+    if(r.pct < 40){
+      $('hudMsg').textContent = 'Coincidencia baja (' + r.pct + '%): no lo muevo. Acercá el modelo a mano sobre la pieza real y probá de nuevo (barré la pieza despacio al capturar).';
+      return;
+    }
     const giro = (r.rotY - S.rotY)*180/Math.PI, desp = r.pos.distanceTo(S.grupo.position);
     S.offsetY += (r.pos.y - S.grupo.position.y);
     S.rotY = r.rotY; S.grupo.rotation.y = S.rotY;
     S.grupo.position.copy(r.pos);
     sincronizarAncla(); guardarCalib();
-    $('hudMsg').textContent = 'Auto-ajuste listo: ' + r.inliers + ' puntos encajados, error medio ' +
-      (r.err*1000).toFixed(0) + ' mm (giró ' + giro.toFixed(1) + '°, movió ' + (desp*100).toFixed(1) + ' cm). Tocá AUTO otra vez para refinar.';
+    $('hudMsg').textContent = (r.pct >= 95 ? '✓ CLAVADO — coincidencia ' : 'Coincidencia ') + r.pct + '% · ' +
+      r.inliers + ' puntos a ' + (r.err*1000).toFixed(0) + ' mm (giró ' + giro.toFixed(1) + '°, movió ' +
+      (desp*100).toFixed(1) + ' cm).' + (r.pct < 95 ? ' Tocá AUTO de nuevo desde otro ángulo para subirla.' : '');
     refrescarHUD();
   }catch(e){
     $('hudMsg').textContent = 'Auto-ajuste falló: ' + (e.message || e);
@@ -2295,6 +2322,50 @@ function agregarPuntoMedicion(){
   }else{
     $('hudMsg').textContent = 'Primer punto marcado. Apuntá al segundo y tocá.';
   }
+}
+
+/* ------------------------------------------------------------
+   7f2. PIELES DE COLOR del modelo — horneadas por vértice
+   altura (cian→naranja) · metal (chapa galvanizada realista) ·
+   caras (cada orientación un tono: se distinguen los planos)
+   ------------------------------------------------------------ */
+const PIELES = ['altura', 'metal', 'caras'];
+function hornearPiel(geo, modo, alto){
+  const pieles = geo.userData.pieles = geo.userData.pieles || {};
+  if(pieles[modo]) return pieles[modo];
+  const pos = geo.getAttribute('position'), nrm = geo.getAttribute('normal');
+  const nV = pos.count, col = new Float32Array(nV*3);
+  const L = new THREE.Vector3(.45,.78,.42).normalize();
+  const c = new THREE.Color(), nv = new THREE.Vector3();
+  const cBajo = new THREE.Color(0x00C2D1), cAlto = new THREE.Color(0xFF6A13);
+  for(let i=0;i<nV;i++){
+    nv.set(nrm.getX(i), nrm.getY(i), nrm.getZ(i));
+    const lam = .42 + .58*Math.abs(nv.dot(L));
+    if(modo === 'metal'){
+      // chapa: gris frío con un brillo direccional más marcado
+      const esp = Math.pow(Math.abs(nv.dot(L)), 8) * .35;
+      c.setRGB(.72*lam + esp, .75*lam + esp, .78*lam + esp);
+    }else if(modo === 'caras'){
+      // cada orientación un tono: azimut de la normal → matiz
+      const az = Math.atan2(nv.z, nv.x);
+      c.setHSL((az/(Math.PI*2) + .5) % 1, .55, .38 + .27*Math.abs(nv.y));
+      c.multiplyScalar(.55 + .45*lam);
+    }else{
+      c.copy(cBajo).lerp(cAlto, Math.max(0, Math.min(1, pos.getY(i)/Math.max(alto,.001))));
+      c.multiplyScalar(lam);
+    }
+    col[i*3]=c.r; col[i*3+1]=c.g; col[i*3+2]=c.b;
+  }
+  pieles[modo] = new THREE.BufferAttribute(col, 3);
+  return pieles[modo];
+}
+function cambiarPiel(){
+  if(!S.trazado || !S.trazado.esModelo) return;
+  S.piel = PIELES[(PIELES.indexOf(S.piel || 'altura') + 1) % PIELES.length];
+  const attr = hornearPiel(S.trazado.geo, S.piel, S.trazado.medidas.y);
+  S.trazado.geo.setAttribute('color', attr);
+  attr.needsUpdate = true;
+  $('btnColor').textContent = 'Color: ' + S.piel;
 }
 
 /* ------------------------------------------------------------
@@ -2518,6 +2589,12 @@ $('panelAR').addEventListener('click', ev => {
       S.autoNube = []; S.autoPend = 45;
       $('hudMsg').textContent = 'Auto-ajuste: movete DESPACIO alrededor de la pieza (1-2 pasos) mientras capturo…';
     }
+  }
+  if(a==='color'){ cambiarPiel(); }
+  if(a==='bandera'){
+    S.verBandera = S.verBandera === false ? true : false;
+    if(S.grupo && S.grupo.userData.grpRef) S.grupo.userData.grpRef.visible = S.verBandera;
+    $('btnBandera').textContent = 'Bandera: ' + (S.verBandera ? 'ON' : 'OFF');
   }
   if(a==='esquina'){
     if(S.esquinando){
