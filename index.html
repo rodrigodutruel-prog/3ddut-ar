@@ -445,7 +445,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
    ============================================================ */
 /* THREE UMD embebido arriba */
 
-const VERSION = 'v2.6.0';
+const VERSION = 'v2.6.1';
 
 /* ------------------------------------------------------------
    1. ESTADO
@@ -2062,6 +2062,7 @@ async function iniciarAR(){
   S.ancPersist = ('persistentAnchors' in session) && (typeof session.restorePersistentAnchor === 'function');
   S.anchor = null; S.ancUuid = null; S.ancListo = false;
   S.ancPos = new THREE.Vector3(); S.ancQuat = new THREE.Quaternion();
+  S.anchor2 = null; S.anc2Listo = false; S.anc2Pos = new THREE.Vector3(); S.anc2Yaw0 = 0; S.anc2Bear0 = 0;
   S.ancDelta = new THREE.Vector3(); S.ancRotLocal = 0;
   let restaurando = false;
   if(S.ancPersist){
@@ -2245,7 +2246,30 @@ async function iniciarAR(){
       }catch(e){}
     }
 
-    // ancla: el trazado sigue al ancla (ARCore corrige la deriva solo)
+    // segunda ancla (P2 del replanteo): su posición viva da el rumbo real
+    if(frame && S.anchor2){
+      let pose2 = null;
+      try{ pose2 = frame.getPose(S.anchor2.anchorSpace, S.refSpaceLocal); }catch(e){}
+      if(pose2){
+        const t2 = pose2.transform;
+        S.anc2Pos.set(t2.position.x, t2.position.y, t2.position.z);
+        if(!S.anc2Listo && S.ancListo){
+          // línea de base: en este instante el rumbo entre anclas equivale al
+          // yaw del ancla 1 — de acá en más solo se aplican las CORRECCIONES
+          const u0 = { x: S.anc2Pos.x - S.ancPos.x, z: S.anc2Pos.z - S.ancPos.z };
+          if(u0.x*u0.x + u0.z*u0.z > 2.25){
+            S.anc2Yaw0 = yawDe(S.ancQuat);
+            S.anc2Bear0 = Math.atan2(-u0.z, u0.x);
+            S.anc2Listo = true;
+          }
+        }
+      }
+    }
+
+    // ancla: el trazado sigue al ancla (ARCore corrige la deriva solo).
+    // La ORIENTACIÓN también se corrige en cada cuadro (antes solo se tomaba
+    // al instalar el ancla → al caminar el edificio quedaba girado): con dos
+    // anclas manda el rumbo entre ellas, con una el yaw vivo del ancla.
     if(frame && S.anchor && S.grupo){
       let pose = null;
       try{ pose = frame.getPose(S.anchor.anchorSpace, S.refSpaceLocal); }catch(e){}
@@ -2258,16 +2282,17 @@ async function iniciarAR(){
           if(S._fijarDelta){
             S._fijarDelta = false;
             sincronizarAncla();                 // ancla nueva: el offset sale de donde está el trazado
-          }else{
-            S.rotY = S.ancRotLocal + yawDe(S.ancQuat);
-            S.grupo.rotation.y = S.rotY;        // ancla restaurada: el trazado va donde dice el ancla
           }
           if(restaurando){
             $('hudMsg').textContent = 'Anclaje recuperado: el trazado está donde lo dejaste.';
             restaurando = false;
           }
         }
-        S.grupo.position.copy(S.ancDelta).applyQuaternion(S.ancQuat).add(S.ancPos);
+        const yA = yawAncla();
+        const qE = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), yA);
+        S.grupo.position.copy(S.ancDelta).applyQuaternion(qE).add(S.ancPos);
+        S.rotY = S.ancRotLocal + yA;
+        S.grupo.rotation.y = S.rotY;
         S.grupo.visible = true;
       }else if(!S.ancListo && S.anclado){
         S.grupo.visible = false;   // todavía no re-localizó: no mostrar en cualquier lado
@@ -2323,12 +2348,26 @@ function borrarAncla(){
   try{ localStorage.removeItem(k); }catch(e){}
 }
 
-// el trazado se movió (gesto / botón): recalcular su offset respecto del ancla
+// yaw efectivo del sistema de anclas: con DOS (P1 y P2 del replanteo) manda
+// el rumbo entre sus posiciones — ARCore corrige las posiciones mucho mejor
+// que la orientación de un ancla sola, que deriva al caminar; con una, su yaw.
+function yawAncla(){
+  if(S.anchor2 && S.anc2Listo){
+    const u = { x: S.anc2Pos.x - S.ancPos.x, z: S.anc2Pos.z - S.ancPos.z };
+    if(u.x*u.x + u.z*u.z > 2.25) return S.anc2Yaw0 + (Math.atan2(-u.z, u.x) - S.anc2Bear0);
+  }
+  return yawDe(S.ancQuat);
+}
+
+// el trazado se movió (gesto / botón): recalcular su offset respecto del ancla.
+// El offset se expresa en el marco Y-puro del yaw efectivo (el modelo vive
+// sobre el piso: cabeceo/rolido del ancla no deben inclinar el delta).
 function sincronizarAncla(){
   if(!S.anchor || !S.ancListo || !S.grupo) return;
-  const inv = S.ancQuat.clone().invert();
+  const yA = yawAncla();
+  const inv = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), -yA);
   S.ancDelta.copy(S.grupo.position).sub(S.ancPos).applyQuaternion(inv);
-  S.ancRotLocal = S.rotY - yawDe(S.ancQuat);
+  S.ancRotLocal = S.rotY - yA;
   guardarAncla();
 }
 
@@ -2349,6 +2388,8 @@ async function instalarAncla(anchor, session){
 }
 
 function olvidarAncla(session){
+  try{ if(S.anchor2 && S.anchor2.delete) S.anchor2.delete(); }catch(e){}
+  S.anchor2 = null; S.anc2Listo = false;
   if(S.anchor){
     if(S.ancUuid && session && typeof session.deletePersistentAnchor === 'function'){
       try{ session.deletePersistentAnchor(S.ancUuid).catch(() => {}); }catch(e){}
@@ -2802,6 +2843,13 @@ function puntoEsquina(){
     if(bE2){ bE2.classList.remove('destacado'); bE2.textContent = 'Anclar esquina'; }
     const bM2 = $('btnMini'); if(bM2) bM2.textContent = 'Planta: OFF';
     if(!S.anchor) S._pedirAncla = true;
+    // SEGUNDA ANCLA física en P2: el rumbo entre las dos anclas sostiene la
+    // orientación aunque el tracking derive al caminar por el galpón
+    try{ if(S.anchor2 && S.anchor2.delete) S.anchor2.delete(); }catch(e){}
+    S.anchor2 = null; S.anc2Listo = false;
+    if(S.ultimoHit && typeof S.ultimoHit.createAnchor === 'function'){
+      S.ultimoHit.createAnchor().then(a => { S.anchor2 = a; S.anc2Listo = false; }).catch(() => {});
+    }
     sincronizarAncla(); guardarCalib();
     let ctrl = 'Control de escala: plano ' + dPlano.toFixed(2) + ' m · medido ' + dReal.toFixed(2) + ' m (dif ' + Math.round(Math.abs(dif)*100) + ' cm).';
     if(Math.abs(dif) > dPlano * .05 + .3) ctrl += ' ⚠ Diferencia grande: revisá que los puntos marcados sean los del plano.';
@@ -2956,6 +3004,7 @@ function cerrarAR(){
   S.renderer = null; S.session = null; S.hitSource = null;
   S.grupo = null; S.anclado = false;
   S.anchor = null; S.ancListo = false; S.ultimoHit = null; S.lightProbe = null;
+  S.anchor2 = null; S.anc2Listo = false;
   S.midiendo = false; S.medGrp = null; S.medPts = [];
   S.esquinando = 0; S.esqP1 = null; S.refP2 = null;
   S.escuadrando = false; S.escPts = []; S.autoPend = 0; S.autoNube = null; S.modeloPts = null; S.autoCorriendo = false; S.marcadorModo = false; S.nubeAcum = null;
