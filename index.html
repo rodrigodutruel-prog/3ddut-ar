@@ -432,7 +432,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
    ============================================================ */
 /* THREE UMD embebido arriba */
 
-const VERSION = 'v1.8.0';
+const VERSION = 'v1.9.0';
 
 /* ------------------------------------------------------------
    1. ESTADO
@@ -1191,10 +1191,16 @@ function prepararPlanoImagen(tz){
     const rnd = new THREE.WebGLRenderer({ canvas: cvv, alpha: true, antialias: true });
     rnd.setClearColor(0x000000, 0);
     const esc = new THREE.Scene();
-    const tieneCol = !!tz.geo.getAttribute('color');
-    const mesh = new THREE.Mesh(tz.geo, new THREE.MeshBasicMaterial(
-      tieneCol ? { vertexColors: true } : { color: 0x00C2D1 }));
+    // look de PLANO CAD: la masa en gris oscuro (DoubleSide: lo seccionado
+    // por el corte se ve relleno, como el rayado de un plano) y las ARISTAS
+    // en blanco.
+    const mesh = new THREE.Mesh(tz.geo, new THREE.MeshBasicMaterial({ color: 0x1a2432, side: THREE.DoubleSide }));
     esc.add(mesh);
+    try{
+      const bordes = new THREE.LineSegments(new THREE.EdgesGeometry(tz.geo, 22),
+        new THREE.LineBasicMaterial({ color: 0xffffff }));
+      esc.add(bordes);
+    }catch(e){}
     const pcx = (bb.min.x + bb.max.x) / 2, pcz = (bb.min.z + bb.max.z) / 2;
     const H = Math.max((bb.max.x - bb.min.x) / 2, (bb.max.z - bb.min.z) / 2) * 1.04;
     // CORTE DE PLANO: en un edificio, mirar desde el techo muestra las chapas
@@ -1208,7 +1214,9 @@ function prepararPlanoImagen(tz){
     cam.lookAt(pcx, bb.min.y, pcz);
     rnd.render(esc, cam);
     const img = document.createElement('canvas'); img.width = w; img.height = w;
-    img.getContext('2d').drawImage(cvv, 0, 0);
+    const gi = img.getContext('2d');
+    // 5 pasadas corridas 1px: las líneas de 1px pasan a ~2-3px y se LEEN
+    [[0,0],[1,0],[-1,0],[0,1],[0,-1]].forEach(o => gi.drawImage(cvv, o[0], o[1]));
     tz.planImg = img;
     tz.planMeta = { cx: pcx, cz: pcz, H: H, w: w };
     rnd.dispose();
@@ -2697,7 +2705,7 @@ function gesAnguloYCentro(){
 }
 
 $('gestos').addEventListener('pointerdown', ev => {
-  GES.punteros.set(ev.pointerId, { x:ev.clientX, y:ev.clientY });
+  GES.punteros.set(ev.pointerId, { x:ev.clientX, y:ev.clientY, x0:ev.clientX, y0:ev.clientY });
   if(GES.punteros.size === 1) S._gesMovio = false;
   if(GES.punteros.size === 2){
     const g = gesAnguloYCentro();
@@ -2722,7 +2730,9 @@ $('gestos').addEventListener('pointermove', ev => {
     const p0 = GES.punteros.get(ev.pointerId);
     const dx0 = ev.clientX - p0.x, dy0 = ev.clientY - p0.y;
     p0.x = ev.clientX; p0.y = ev.clientY;
-    if(Math.abs(dx0) + Math.abs(dy0) > 2) S._gesMovio = true;
+    // solo cuenta como arrastre si se ALEJÓ del punto de apoyo (un tap
+    // normal tiembla unos píxeles y tiene que seguir marcando)
+    if(p0.x0 != null && Math.hypot(ev.clientX - p0.x0, ev.clientY - p0.y0) > 14) S._gesMovio = true;
     S.planPan = S.planPan || { x:0, y:0 };
     if(GES.punteros.size === 1){
       S.planPan.x += dx0; S.planPan.y += dy0;
