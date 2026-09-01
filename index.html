@@ -55,7 +55,9 @@ body{
   width:132px; height:132px; border-radius:10px; border:1px solid rgba(0,174,239,.55);
   background:rgba(9,9,11,.55); pointer-events:none; }
 #miniPlanta.grande{ right:0; top:0; left:0; bottom:0; width:100vw; height:100vh;
-  border:none; border-radius:0; background:rgba(9,9,11,.30); }
+  border:none; border-radius:0; background:rgba(9,9,11,.30); z-index:45; }
+.bctrl.destacado{ background:#00AEEF !important; border-color:#00AEEF !important;
+  color:#04121a !important; font-weight:800; box-shadow:0 0 14px rgba(0,174,239,.6); }
 .panel-ar{ position:relative; z-index:48; }
 .hud{ position:relative; z-index:47; }
 .cv-marcador{ width:min(160px,40vw); height:auto; border-radius:8px; border:1px solid var(--borde); image-rendering:pixelated; }
@@ -432,7 +434,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
    ============================================================ */
 /* THREE UMD embebido arriba */
 
-const VERSION = 'v2.0.0';
+const VERSION = 'v2.0.2';
 
 /* ------------------------------------------------------------
    1. ESTADO
@@ -1757,11 +1759,8 @@ async function revisarSoporte(){
 async function iniciarAR(){
   if(!S.trazado) return;
 
-  const canvas = document.createElement('canvas');
-  const renderer = new THREE.WebGLRenderer({ canvas, alpha:true, antialias:false });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.xr.enabled = true;
+  const renderer = obtenerRenderer();
+  const canvas = renderer.domElement;
   document.body.appendChild(canvas);
   canvas.style.position = 'fixed';
   canvas.style.top = '0'; canvas.style.left = '0';
@@ -1956,7 +1955,7 @@ async function iniciarAR(){
     S.escala = 1;                            // los modelos van SIEMPRE 1:1
     S.planoModo = 'grande'; S.planZoom = 1; S.planPan = { x:0, y:0 };
     const bM0 = $('btnMini'); if(bM0) bM0.textContent = 'Planta: GRANDE';
-    const bE = $('btnEsquina'); if(bE) bE.textContent = '✔ Usar este punto';
+    const bE = $('btnEsquina'); if(bE){ bE.textContent = '✔ Usar este punto'; bE.classList.add('destacado'); }
     $('hudMsg').textContent = '¿Qué punto de referencia usás? La tríada roja marca el ORIGEN del CAD. Si querés OTRA esquina: hacé zoom (2 dedos) y tocala en el plano — tiene imán a las esquinas. Cuando esté bien: "✔ Usar este punto".';
   }
 
@@ -2735,6 +2734,21 @@ function refrescarHUD(){
     (S.oclDisponible && S.oclusion ? '   OCL' : '');
 }
 
+/* UN solo renderer WebGL para toda la vida de la app: crear y destruir
+   contextos alrededor de sesiones ARCore congelaba Chrome al Salir
+   (mismo patrón ya probado en el escáner de ms-ar). */
+let _rendererUnico = null;
+function obtenerRenderer(){
+  if(!_rendererUnico){
+    const cv = document.createElement('canvas');
+    _rendererUnico = new THREE.WebGLRenderer({ canvas: cv, alpha: true, antialias: false });
+    _rendererUnico.xr.enabled = true;
+  }
+  _rendererUnico.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+  _rendererUnico.setSize(window.innerWidth, window.innerHeight);
+  return _rendererUnico;
+}
+
 function cerrarAR(){
   const r = S.renderer;
   S.renderer = null; S.session = null; S.hitSource = null;
@@ -2743,16 +2757,16 @@ function cerrarAR(){
   S.midiendo = false; S.medGrp = null; S.medPts = [];
   S.esquinando = 0; S.esqP1 = null;
   S.escuadrando = false; S.escPts = []; S.autoPend = 0; S.autoNube = null; S.modeloPts = null; S.autoCorriendo = false; S.marcadorModo = false; S.nubeAcum = null;
-  if(S.ocl && S.ocl.tex){ try{ S.ocl.tex.dispose(); }catch(e){} }
+  const _oclTex = S.ocl && S.ocl.tex;
+  if(_oclTex) setTimeout(() => { try{ _oclTex.dispose(); }catch(e){} }, 1200);
   S.ocl = null; S.oclDisponible = false;
   $('capaAR').classList.add('oculto');
   $('capaUI').classList.remove('oculto');
   if(r){
     try{ r.setAnimationLoop(null); }catch(e){}
     try{ r.domElement.remove(); }catch(e){}
-    // dispose() en el mismo instante del cierre de sesión cuelga Chrome en
-    // algunos equipos: lo hacemos un ratito después
-    setTimeout(() => { try{ r.dispose(); }catch(e){} }, 400);
+    // el renderer NO se destruye: se reusa en la próxima sesión (destruirlo
+    // durante el desarme de ARCore congelaba la app al Salir)
   }
 }
 
@@ -2968,6 +2982,7 @@ $('panelAR').addEventListener('click', ev => {
     if(S.esquinando === 3){
       // punto de referencia confirmado → a marcar el rincón real
       S.esquinando = 1;
+      $('btnEsquina').classList.remove('destacado');
       $('btnEsquina').textContent = 'Esquina: cancelar';
       $('hudMsg').textContent = 'Punto confirmado ✔. Ahora andá a ESA esquina real del galpón, apuntá la retícula al rincón (pared = retícula cian, más preciso) y tocá.';
     }else if(S.esquinando === 2){
@@ -2977,6 +2992,7 @@ $('panelAR').addEventListener('click', ev => {
       $('hudMsg').textContent = '↩ De nuevo: apuntá la retícula al rincón correcto del piso y tocá.';
     }else if(S.esquinando === 1){
       S.esquinando = 0; S.esqP1 = null;
+      $('btnEsquina').classList.remove('destacado');
       $('btnEsquina').textContent = 'Anclar esquina';
       $('hudMsg').textContent = 'Anclaje por esquina cancelado.';
     }else if(!S.trazado || !S.trazado.esModelo){
@@ -3138,10 +3154,8 @@ async function iniciarARSensor(){
   try{ await vid.play(); }catch(e){}
 
   // 3. escena encima del video
-  const canvas = document.createElement('canvas');
-  const renderer = new THREE.WebGLRenderer({ canvas, alpha:true, antialias:false });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
-  renderer.setSize(window.innerWidth, window.innerHeight);
+  const renderer = obtenerRenderer();
+  const canvas = renderer.domElement;
   canvas.style.position='fixed'; canvas.style.top='0'; canvas.style.left='0';
   canvas.style.zIndex='42';
   document.body.appendChild(canvas);
@@ -3234,7 +3248,7 @@ function cerrarARSensor(){
   if(SENS.stream){ SENS.stream.getTracks().forEach(t => t.stop()); SENS.stream = null; }
   const vid = $('videoCam');
   vid.srcObject = null; vid.classList.add('oculto');
-  if(S.renderer){ S.renderer.domElement.remove(); S.renderer.dispose(); S.renderer = null; }
+  if(S.renderer){ try{ S.renderer.setAnimationLoop(null); }catch(e){} S.renderer.domElement.remove(); S.renderer = null; }  // el renderer se reusa, no se destruye
   S.grupo = null; S.anclado = false;
   $('capaAR').classList.add('oculto');
   $('capaUI').classList.remove('oculto');
@@ -3249,9 +3263,7 @@ function iniciar3D(){
   cont.classList.remove('oculto');
   $('capaUI').classList.add('oculto');
 
-  const renderer = new THREE.WebGLRenderer({ antialias:true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
-  renderer.setSize(window.innerWidth, window.innerHeight);
+  const renderer = obtenerRenderer();
   cont.appendChild(renderer.domElement);
 
   const scene = nuevaEscena();
@@ -3311,8 +3323,7 @@ function iniciar3D(){
 
   $('btnSalir3D').onclick = () => {
     cancelAnimationFrame(S.raf3D);
-    renderer.dispose();
-    el.remove();
+    el.remove();                    // el renderer se reusa, no se destruye
     cont.classList.add('oculto');
     $('capaUI').classList.remove('oculto');
   };
