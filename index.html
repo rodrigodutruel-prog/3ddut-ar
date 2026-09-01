@@ -51,6 +51,9 @@ body{
 }
 .oculto{ display:none !important; }
 #gestos{ position:fixed; top:0; left:0; right:0; bottom:0; z-index:46; touch-action:none; pointer-events:auto; }
+#miniPlanta{ position:fixed; right:10px; top:calc(96px + env(safe-area-inset-top)); z-index:49;
+  width:132px; height:132px; border-radius:10px; border:1px solid rgba(0,174,239,.55);
+  background:rgba(9,9,11,.55); pointer-events:none; }
 .panel-ar{ position:relative; z-index:48; }
 .hud{ position:relative; z-index:47; }
 .cv-marcador{ width:min(160px,40vw); height:auto; border-radius:8px; border:1px solid var(--borde); image-rendering:pixelated; }
@@ -344,6 +347,7 @@ body{
 <video id="videoCam" class="oculto" autoplay playsinline muted></video>
 <div id="capaAR" class="oculto">
   <div id="gestos"></div>
+  <canvas id="miniPlanta" width="300" height="300" class="oculto"></canvas>
   <div id="hud" class="hud">
     <div id="hudMsg" class="hud-msg">Movete despacio apuntando al piso…</div>
     <div id="hudDatos" class="hud-datos"></div>
@@ -387,6 +391,7 @@ body{
       <div class="pgrupo">
         <button class="bctrl" data-act="color" id="btnColor">Color: altura</button>
         <button class="bctrl" data-act="bandera" id="btnBandera">Bandera: ON</button>
+        <button class="bctrl" data-act="mini" id="btnMini">Planta: ON</button>
       </div>
       <div class="pgrupo">
         <button class="bctrl" data-act="ocl" id="btnOcl">Oclusión: ON</button>
@@ -425,7 +430,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
    ============================================================ */
 /* THREE UMD embebido arriba */
 
-const VERSION = 'v1.4.0';
+const VERSION = 'v1.5.0';
 
 /* ------------------------------------------------------------
    1. ESTADO
@@ -1154,7 +1159,13 @@ function cargarModelo3D(file){
       // bandera roja del modelo y el botón "Anclar esquina", el usuario se
       // para en la esquina real del galpón y lo clava ahí.
       const refEsq = new THREE.Vector3(geo.boundingBox.min.x, 0, geo.boundingBox.min.z);
-      S.trazado = { esModelo:true, geo:geo, obra:file.name, medidas:med, tris:nTris, refEsquina:refEsq };
+      // silueta en planta para el minimapa (muestra de vértices, X/Z locales)
+      const _posM = geo.getAttribute('position');
+      const _salto = Math.max(1, Math.floor(_posM.count/3500));
+      const _mini = new Float32Array(Math.ceil(_posM.count/_salto)*2);
+      let _mk = 0;
+      for(let _i=0;_i<_posM.count;_i+=_salto){ _mini[_mk++]=_posM.getX(_i); _mini[_mk++]=_posM.getZ(_i); }
+      S.trazado = { esModelo:true, geo:geo, obra:file.name, medidas:med, tris:nTris, refEsquina:refEsq, miniPts:_mini.slice(0,_mk) };
       pintarInfo(S.trazado);
       $('estadoAR').classList.remove('err');
       revisarSoporte();
@@ -1841,7 +1852,7 @@ async function iniciarAR(){
   S.medGrp = new THREE.Group(); S.medPts = [];
   S.scene.add(S.medGrp);
   // ── v1.0 ──
-  S.escuadrando = false; S.escPts = []; S.autoPend = 0; S.autoNube = null; S.modeloPts = null; S.autoCorriendo = false;
+  S.escuadrando = false; S.escPts = []; S.autoPend = 0; S.autoNube = null; S.modeloPts = null; S.autoCorriendo = false; S.nubeAcum = null;
   S.marcadorModo = false;
   S.imgTrack = false;
   try{ S.imgTrack = !!(S.marcadorBitmap && typeof session.getTrackedImageScores === 'function'); }catch(e){}
@@ -1957,6 +1968,11 @@ async function iniciarAR(){
           break;
         }
       }catch(e){}
+    }
+
+    if(S.trazado && S.trazado.esModelo){
+      S._miniTick = (S._miniTick||0) + 1;
+      if(S._miniTick % 6 === 0) dibujarMiniPlanta();
     }
 
     // auto-ajuste: juntar nube de puntos de varios frames y encajar.
@@ -2222,6 +2238,20 @@ async function correrAutoAjuste(){
   try{
     if(!S.modeloPts) S.modeloPts = muestrearModelo(S.grupo, 3000);
     const nube = S.autoNube || [];
+    // MOSTRAR lo que capturó el teléfono: la nube en puntos amarillos por 5 s.
+    // Si los puntos no pintan la pieza real, el problema es la captura (luz,
+    // distancia, moverse) — no el encaje.
+    try{
+      if(nube.length && S.scene){
+        const gN = new THREE.BufferGeometry();
+        const aN = new Float32Array(nube.length*3);
+        nube.forEach((pt,i) => { aN[i*3]=pt.x; aN[i*3+1]=pt.y; aN[i*3+2]=pt.z; });
+        gN.setAttribute('position', new THREE.BufferAttribute(aN,3));
+        const ptsN = new THREE.Points(gN, new THREE.PointsMaterial({ color:0xFFC400, size:.012, sizeAttenuation:true, transparent:true, opacity:.85 }));
+        S.scene.add(ptsN);
+        setTimeout(() => { try{ S.scene.remove(ptsN); gN.dispose(); }catch(e){} }, 5000);
+      }
+    }catch(e){}
     $('hudMsg').textContent = 'Encajando… (' + nube.length + ' puntos)';
     // RONDAS DE REFINAMIENTO: se busca el calce y se vuelve a encajar desde el
     // resultado hasta que la coincidencia deja de mejorar (ideal ≥95%).
@@ -2250,7 +2280,19 @@ async function correrAutoAjuste(){
   }catch(e){
     $('hudMsg').textContent = 'Auto-ajuste falló: ' + (e.message || e);
   }finally{
-    S.autoCorriendo = false; S.autoNube = null;
+    S.autoCorriendo = false;
+    // ACUMULAR: la nube queda guardada y la próxima captura le suma otro
+    // ángulo — caminando alrededor de la pieza el calce mejora corrida a corrida
+    if(S.autoNube && S.autoNube.length){
+      let acc = S.autoNube;
+      if(acc.length > 15000){
+        const paso = acc.length/15000, sub = [];
+        for(let i=0;i<acc.length;i+=paso) sub.push(acc[Math.floor(i)]);
+        acc = sub;
+      }
+      S.nubeAcum = acc;
+    }
+    S.autoNube = null;
   }
 }
 
@@ -2407,11 +2449,76 @@ function puntoEsquina(){
     S.grupo.position.copy(S.esqP1).sub(ref.clone().multiplyScalar(sEsc).applyQuaternion(q2));
     S.grupo.position.y += S.offsetY;
     S.esquinando = 0; S.esqP1 = null;
+  const _mp = $('miniPlanta'); if(_mp) _mp.classList.add('oculto');
     const bE = $('btnEsquina'); if(bE) bE.textContent = 'Anclar esquina';
     sincronizarAncla(); guardarCalib();
     $('hudMsg').textContent = 'Anclado por esquina y pared ✓. Si la pared quedó del lado equivocado, tocá "Girar 90°".';
   }
   refrescarHUD();
+}
+
+/* ------------------------------------------------------------
+   7f3. MINIMAPA — vista en planta para orientarse en el galpón
+   El modelo visto desde arriba (silueta de puntos), la bandera de
+   la esquina de referencia y VOS como flecha amarilla, en vivo.
+   ------------------------------------------------------------ */
+function dibujarMiniPlanta(){
+  const cv = $('miniPlanta');
+  if(!cv || !S.trazado || !S.trazado.miniPts || !S.grupo || !S.grupo.visible){ if(cv) cv.classList.add('oculto'); return; }
+  if(S.verMini === false){ cv.classList.add('oculto'); return; }
+  cv.classList.remove('oculto');
+  const g2 = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+  const cam = (S.renderer && S.renderer.xr && S.renderer.xr.isPresenting) ? S.renderer.xr.getCamera() : S.camera;
+  if(!cam) return;
+  const cp = new THREE.Vector3(); cam.getWorldPosition(cp);
+  const fw = new THREE.Vector3(); cam.getWorldDirection(fw);
+
+  const esc = 1/S.escala, cy = Math.cos(S.rotY), sy = Math.sin(S.rotY);
+  const gp = S.grupo.position;
+  const aMundo = (x, z) => {                    // local → mundo (XZ, con rotY)
+    const wx = (x*cy + z*sy) * esc + gp.x;      // R_y: x' = x cos + z sin
+    const wz = (-x*sy + z*cy) * esc + gp.z;     //      z' = -x sin + z cos
+    return [wx, wz];
+  };
+  // encuadre: bbox del modelo en mundo + la cámara
+  const bb = S.trazado.geo.boundingBox;
+  let mnx=1e9, mnz=1e9, mxx=-1e9, mxz=-1e9;
+  [[bb.min.x,bb.min.z],[bb.max.x,bb.min.z],[bb.min.x,bb.max.z],[bb.max.x,bb.max.z]].forEach(e => {
+    const [wx,wz] = aMundo(e[0], e[1]);
+    if(wx<mnx)mnx=wx; if(wx>mxx)mxx=wx;
+    if(wz<mnz)mnz=wz; if(wz>mxz)mxz=wz;
+  });
+  if(cp.x<mnx)mnx=cp.x; if(cp.x>mxx)mxx=cp.x;
+  if(cp.z<mnz)mnz=cp.z; if(cp.z>mxz)mxz=cp.z;
+  const mrg = 12;
+  const k = Math.min((W-2*mrg)/Math.max(.5, mxx-mnx), (H-2*mrg)/Math.max(.5, mxz-mnz));
+  const aPx = (wx, wz) => [mrg + (wx-mnx)*k, mrg + (wz-mnz)*k];
+
+  g2.clearRect(0,0,W,H);
+  // silueta del modelo
+  g2.fillStyle = 'rgba(0,194,209,.85)';
+  const pts = S.trazado.miniPts;
+  for(let i=0;i<pts.length;i+=2){
+    const [wx,wz] = aMundo(pts[i], pts[i+1]);
+    const [px,pz] = aPx(wx,wz);
+    g2.fillRect(px, pz, 1.6, 1.6);
+  }
+  // bandera de la esquina de referencia
+  if(S.trazado.refEsquina){
+    const [wx,wz] = aMundo(S.trazado.refEsquina.x, S.trazado.refEsquina.z);
+    const [px,pz] = aPx(wx,wz);
+    g2.fillStyle = '#E31E24';
+    g2.beginPath(); g2.arc(px, pz, 5, 0, Math.PI*2); g2.fill();
+  }
+  // vos: flecha amarilla con tu rumbo
+  const [cxp,czp] = aPx(cp.x, cp.z);
+  const ang = Math.atan2(fw.z, fw.x);
+  g2.save();
+  g2.translate(cxp, czp); g2.rotate(ang);
+  g2.fillStyle = '#FFC400';
+  g2.beginPath(); g2.moveTo(9,0); g2.lineTo(-6,-5.5); g2.lineTo(-3,0); g2.lineTo(-6,5.5); g2.closePath(); g2.fill();
+  g2.restore();
 }
 
 function refrescarHUD(){
@@ -2432,7 +2539,7 @@ function cerrarAR(){
   S.anchor = null; S.ancListo = false; S.ultimoHit = null;
   S.midiendo = false; S.medGrp = null; S.medPts = [];
   S.esquinando = 0; S.esqP1 = null;
-  S.escuadrando = false; S.escPts = []; S.autoPend = 0; S.autoNube = null; S.modeloPts = null; S.autoCorriendo = false; S.marcadorModo = false;
+  S.escuadrando = false; S.escPts = []; S.autoPend = 0; S.autoNube = null; S.modeloPts = null; S.autoCorriendo = false; S.marcadorModo = false; S.nubeAcum = null;
   if(S.ocl && S.ocl.tex){ try{ S.ocl.tex.dispose(); }catch(e){} }
   S.ocl = null; S.oclDisponible = false;
   $('capaAR').classList.add('oculto');
@@ -2586,7 +2693,7 @@ $('panelAR').addEventListener('click', ev => {
     if(!S.oclDisponible){ $('hudMsg').textContent = 'Este equipo no entrega profundidad: el auto-ajuste no está disponible.'; }
     else if(!S.anclado){ $('hudMsg').textContent = 'Primero anclá el modelo más o menos sobre la pieza real.'; }
     else if(!S.autoCorriendo){
-      S.autoNube = []; S.autoPend = 45;
+      S.autoNube = (S.nubeAcum || []).slice(); S.autoPend = 45;
       $('hudMsg').textContent = 'Auto-ajuste: movete DESPACIO alrededor de la pieza (1-2 pasos) mientras capturo…';
     }
   }
@@ -2595,6 +2702,11 @@ $('panelAR').addEventListener('click', ev => {
     S.verBandera = S.verBandera === false ? true : false;
     if(S.grupo && S.grupo.userData.grpRef) S.grupo.userData.grpRef.visible = S.verBandera;
     $('btnBandera').textContent = 'Bandera: ' + (S.verBandera ? 'ON' : 'OFF');
+  }
+  if(a==='mini'){
+    S.verMini = S.verMini === false ? true : false;
+    $('btnMini').textContent = 'Planta: ' + (S.verMini ? 'ON' : 'OFF');
+    if(!S.verMini) $('miniPlanta').classList.add('oculto');
   }
   if(a==='esquina'){
     if(S.esquinando){
