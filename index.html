@@ -421,7 +421,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
    ============================================================ */
 /* THREE UMD embebido arriba */
 
-const VERSION = 'v1.2.0';
+const VERSION = 'v1.3.0';
 
 /* ------------------------------------------------------------
    1. ESTADO
@@ -1215,18 +1215,27 @@ function construirGrupoModelo(tz){
   // BANDERA de la esquina de referencia: es la esquina que se apoya sobre la
   // esquina real del galpón con el botón "Anclar esquina".
   if(tz.refEsquina){
-    const poste = new THREE.Mesh(new THREE.CylinderGeometry(.035, .035, 1.6, 10),
+    // la bandera escala con el modelo: en un galpón de 70 m una bandera de
+    // 1,6 m desaparece — acá mide hasta 6 m de alto
+    const kf = Math.min(6, Math.max(1.6, Math.max(tz.medidas.x, tz.medidas.z) * .08));
+    const poste = new THREE.Mesh(new THREE.CylinderGeometry(.03*kf, .03*kf, kf, 10),
       new THREE.MeshBasicMaterial({ color:0xE31E24 }));
-    poste.position.copy(tz.refEsquina).add(new THREE.Vector3(0, .8, 0));
+    poste.position.copy(tz.refEsquina).add(new THREE.Vector3(0, kf/2, 0));
     g.add(poste);
-    const bandera = new THREE.Mesh(new THREE.BoxGeometry(.45, .28, .02),
+    const bandera = new THREE.Mesh(new THREE.BoxGeometry(.30*kf, .18*kf, .015*kf),
       new THREE.MeshBasicMaterial({ color:0xE31E24, side:THREE.DoubleSide }));
-    bandera.position.copy(tz.refEsquina).add(new THREE.Vector3(.25, 1.45, 0));
+    bandera.position.copy(tz.refEsquina).add(new THREE.Vector3(.16*kf, kf*.88, 0));
     g.add(bandera);
     const etE = etiqueta('ESQUINA REF.', new THREE.Color(0xE31E24));
-    etE.position.copy(tz.refEsquina).add(new THREE.Vector3(0, 1.85, 0));
-    etE.scale.set(.5, .125, 1);
+    etE.position.copy(tz.refEsquina).add(new THREE.Vector3(0, kf*1.12, 0));
+    etE.scale.set(.22*kf, .055*kf, 1);
     g.add(etE);
+    // la PARED DE REFERENCIA marcada en el piso: desde la esquina, la línea
+    // ámbar con flecha indica hacia dónde caminar para el segundo toque
+    const Lp = Math.min(Math.max(tz.medidas.x * .5, 4), 14);
+    const pared = new THREE.ArrowHelper(new THREE.Vector3(1,0,0),
+      tz.refEsquina.clone().add(new THREE.Vector3(0,.03,0)), Lp, 0xFFC400, Math.min(1.2, Lp*.12), Math.min(.7, Lp*.07));
+    g.add(pared);
   }
 
   const grpEtiq = new THREE.Group(), grpMaq = new THREE.Group();
@@ -1677,6 +1686,21 @@ async function iniciarAR(){
   S.scene.add(ret);
   S.reticula = ret;
 
+  // guía del modo esquina: banderita + flecha de la pared de referencia,
+  // pegadas a la retícula — se ve QUÉ se va a clavar y hacia dónde sale la pared
+  const guia = new THREE.Group();
+  const gPoste = new THREE.Mesh(new THREE.CylinderGeometry(.02,.02,.9,8),
+    new THREE.MeshBasicMaterial({ color:0xE31E24 }));
+  gPoste.position.y = .45; guia.add(gPoste);
+  const gBand = new THREE.Mesh(new THREE.BoxGeometry(.3,.18,.015),
+    new THREE.MeshBasicMaterial({ color:0xE31E24, side:THREE.DoubleSide }));
+  gBand.position.set(.17,.8,0); guia.add(gBand);
+  const gFlecha = new THREE.ArrowHelper(new THREE.Vector3(1,0,0), new THREE.Vector3(0,.02,0), 1.6, 0xFFC400, .3, .18);
+  guia.add(gFlecha);
+  guia.visible = false;
+  S.scene.add(guia);
+  S.esqGuia = guia;
+
   S.grupo = construirGrupo(S.trazado);
   S.grupo.visible = false;
   aplicarEscala();
@@ -1823,6 +1847,15 @@ async function iniciarAR(){
 
   $('panelAR').classList.remove('oculto');
 
+  // MODELO GRANDE (un galpón): el flujo normal de "tocá el piso y aparece
+  // todo" marea — el edificio te cae encima en cualquier lado. Acá se arranca
+  // DIRECTO en el modo esquina: primero el rincón real, después la pared.
+  if(S.trazado && S.trazado.esModelo && Math.max(S.trazado.medidas.x, S.trazado.medidas.z) >= 12){
+    S.esquinando = 1;
+    const bE = $('btnEsquina'); if(bE) bE.textContent = 'Esquina: cancelar';
+    $('hudMsg').textContent = 'MODELO GRANDE: andá a la ESQUINA de referencia real del galpón, apuntá la retícula al rincón del piso y tocá. Después vas a marcar la pared.';
+  }
+
   // tap → anclar (o medir). Escuchamos el 'select' de la sesión.
   const alAnclar = ev => {
     if(S.esquinando){ puntoEsquina(); return; }
@@ -1875,6 +1908,14 @@ async function iniciarAR(){
       }else{
         S.reticula.visible = false;
         S.ultimoHit = null;
+      }
+      if(S.esqGuia){
+        const mostrar = S.esquinando === 1 && S.reticula.visible;
+        S.esqGuia.visible = mostrar;
+        if(mostrar){
+          S.esqGuia.position.setFromMatrixPosition(S.reticula.matrix);
+          S.esqGuia.rotation.y = S.rotY;
+        }
       }
     }else if(!S.midiendo && !S.escuadrando && !S.esquinando){
       S.reticula.visible = false;
