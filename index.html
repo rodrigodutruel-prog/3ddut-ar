@@ -434,7 +434,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
    ============================================================ */
 /* THREE UMD embebido arriba */
 
-const VERSION = 'v2.0.2';
+const VERSION = 'v2.1.0';
 
 /* ------------------------------------------------------------
    1. ESTADO
@@ -1951,7 +1951,7 @@ async function iniciarAR(){
   // todo" marea — el edificio te cae encima en cualquier lado. Acá se arranca
   // DIRECTO en el modo esquina: primero el rincón real, después la pared.
   if(S.trazado && S.trazado.esModelo && Math.max(S.trazado.medidas.x, S.trazado.medidas.z) >= 12){
-    S.esquinando = 3;                       // paso 0: ELEGIR el punto de referencia
+    S.esquinando = 3;  S.refP2 = null;      // paso 0: ELEGIR el punto de referencia
     S.escala = 1;                            // los modelos van SIEMPRE 1:1
     S.planoModo = 'grande'; S.planZoom = 1; S.planPan = { x:0, y:0 };
     const bM0 = $('btnMini'); if(bM0) bM0.textContent = 'Planta: GRANDE';
@@ -2547,75 +2547,68 @@ function cambiarPiel(){
    su pared acompaña la real. Galpones enteros, ubicados en serio.
    ------------------------------------------------------------ */
 function puntoEsquina(){
-  if(S.esquinando === 3) return;                    // paso 0: los toques eligen sobre el plano
-  if(S._gesMovio){ S._gesMovio = false; return; }   // fue un arrastre del plano, no una marca
+  if(S.esquinando === 3 || S.esquinando === 4) return;   // en el plano se elige tocando el plano
+  if(S._gesMovio){ S._gesMovio = false; return; }
   if(!S.reticula || !S.reticula.visible || !S.grupo || !S.trazado || !S.trazado.refEsquina){
-    $('hudMsg').textContent = 'Apuntá la retícula al piso (tiene que verse el aro rojo) y tocá.';
+    $('hudMsg').textContent = 'Apuntá la retícula al piso o a la pared (tiene que verse el aro) y tocá.';
     return;
   }
   const p = new THREE.Vector3().setFromMatrixPosition(S.reticula.matrix);
   const contraPared = !!S.hitEsPared;
-  if(contraPared) p.y = 0;    // pared: el punto baja en vertical al nivel del piso
-  const sEsc = 1 / S.escala;
+  if(contraPared) p.y = 0;
   const ref = S.trazado.refEsquina;
+
   if(S.esquinando === 1){
+    // ── PUNTO 1 EN LA REALIDAD: el punto elegido del plano se clava acá ──
     S.esqP1 = p.clone();
     const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), S.rotY);
-    const refW = ref.clone().multiplyScalar(sEsc).applyQuaternion(q);
-    S.grupo.position.copy(p).sub(refW);
+    S.grupo.position.copy(p).sub(ref.clone().applyQuaternion(q));
     S.grupo.position.y += S.offsetY;
     S.grupo.rotation.y = S.rotY;
     S.grupo.visible = true; S.anclado = true;
-    S.esquinando = 2;
-    const bE1 = $('btnEsquina'); if(bE1) bE1.textContent = '↩ Volver a la esquina';
-    S.planoModo = 'grande';   // la vista en planta se abre sola para ubicarse
-    const bM = $('btnMini'); if(bM) bM.textContent = 'Planta: GRANDE';
-    $('hudMsg').textContent = (contraPared ? 'Esquina fijada contra la PARED ⚑ (proyectada al piso). ' : 'Esquina fijada ⚑. ')  + ' Ahora caminá unos metros SIGUIENDO LA PARED de referencia, apuntá la retícula al piso junto a la pared y tocá.';
-  }else{
-    const dir = p.clone().sub(S.esqP1); dir.y = 0;
-    if(dir.lengthSq() < 1){
-      $('hudMsg').textContent = 'Muy cerca de la esquina: alejate al menos 2-3 m por la pared y tocá de nuevo.';
+    // → a elegir el SEGUNDO punto sobre el plano
+    S.esquinando = 4;
+    S.planoModo = 'grande';
+    const bE = $('btnEsquina');
+    if(bE){ bE.textContent = '✔ Usar 2º punto'; bE.classList.add('destacado'); }
+    $('hudMsg').textContent = (contraPared ? 'Punto 1 fijado contra la PARED ✓. ' : 'Punto 1 fijado ✓. ') +
+      'Ahora elegí el SEGUNDO punto EN EL PLANO (una esquina bien alejada del primero): zoom y tocala. Después lo vas a marcar en el galpón.';
+    refrescarHUD();
+    return;
+  }
+
+  if(S.esquinando === 5){
+    // ── PUNTO 2 EN LA REALIDAD: con los 2 pares queda orientado EXACTO ──
+    if(!S.refP2){ S.esquinando = 4; return; }
+    const uR = { x: p.x - S.esqP1.x, z: p.z - S.esqP1.z };
+    const dReal = Math.hypot(uR.x, uR.z);
+    if(dReal < 1.5){
+      $('hudMsg').textContent = 'Muy cerca del punto 1 (' + dReal.toFixed(1) + ' m): cuanto más lejos, más precisa la orientación. Marcá el punto 2 en su lugar real.';
       return;
     }
-    dir.normalize();
-    // La esquina tiene DOS paredes (la del largo y la del ancho). Se prueban
-    // las dos alineaciones y queda la que deja al usuario ADENTRO del galpón
-    // — antes se alineaba una sola a ciegas y el edificio se iba para
-    // cualquier lado ("seteo los dos puntos y no aparece nada").
-    const cam2 = (S.renderer && S.renderer.xr && S.renderer.xr.isPresenting) ? S.renderer.xr.getCamera() : S.camera;
-    const cpos = new THREE.Vector3(); if(cam2) cam2.getWorldPosition(cpos);
-    const bb2 = S.trazado.geo.boundingBox;
-    const candidatos = [
-      Math.atan2(-dir.z, dir.x),               // pared local +X siguiendo la caminata
-      Math.atan2(dir.x, dir.z)                 // pared local +Z siguiendo la caminata
-    ];
-    let elegido = candidatos[0], mejorPuntaje = -1e9;
-    candidatos.forEach(rY => {
-      const qq = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), rY);
-      const pp = S.esqP1.clone().sub(ref.clone().multiplyScalar(sEsc).applyQuaternion(qq));
-      // cámara en coords locales del modelo
-      const loc = cpos.clone().sub(pp).applyQuaternion(qq.clone().invert()).multiplyScalar(S.escala);
-      const margen = 3;
-      const adentroX = Math.min(loc.x - (bb2.min.x - margen), (bb2.max.x + margen) - loc.x);
-      const adentroZ = Math.min(loc.z - (bb2.min.z - margen), (bb2.max.z + margen) - loc.z);
-      const puntaje = Math.min(adentroX, adentroZ);   // >0 = adentro; más grande, más adentro
-      if(puntaje > mejorPuntaje){ mejorPuntaje = puntaje; elegido = rY; }
-    });
-    S.rotY = elegido;
+    const uL = { x: S.refP2.x - ref.x, z: S.refP2.z - ref.z };
+    const dPlano = Math.hypot(uL.x, uL.z);
+    // rotación exacta: el vector del plano gira hasta calzar con el medido.
+    // LA ESCALA NO SE TOCA NUNCA: siempre 1:1.
+    S.rotY = Math.atan2(-uR.z, uR.x) - Math.atan2(-uL.z, uL.x);
     const q2 = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), S.rotY);
     S.grupo.rotation.y = S.rotY;
-    S.grupo.position.copy(S.esqP1).sub(ref.clone().multiplyScalar(sEsc).applyQuaternion(q2));
+    S.grupo.position.copy(S.esqP1).sub(ref.clone().applyQuaternion(q2));
     S.grupo.position.y += S.offsetY;
-    S.esquinando = 0; S.esqP1 = null;
-    S.planoModo = 'off';                         // listo el replanteo: el plano se apaga
+    const dif = dReal - dPlano;
+    S.esquinando = 0; S.esqP1 = null; S.refP2 = null;
+    S.planoModo = 'off';
     $('miniPlanta').classList.add('oculto');
+    const bE2 = $('btnEsquina');
+    if(bE2){ bE2.classList.remove('destacado'); bE2.textContent = 'Anclar esquina'; }
     const bM2 = $('btnMini'); if(bM2) bM2.textContent = 'Planta: OFF';
-  const _mp = $('miniPlanta'); if(_mp) _mp.classList.add('oculto');
-    const bE = $('btnEsquina'); if(bE) bE.textContent = 'Anclar esquina';
     sincronizarAncla(); guardarCalib();
-    $('hudMsg').textContent = 'Anclado por esquina y pared ✓. ¿Salió mal? "Anclar esquina" lo rehace desde cero, "Girar 90°" corrige el lado.';
+    let ctrl = 'Control de escala: plano ' + dPlano.toFixed(2) + ' m · medido ' + dReal.toFixed(2) + ' m (dif ' + Math.round(Math.abs(dif)*100) + ' cm).';
+    if(Math.abs(dif) > dPlano * .05 + .3) ctrl += ' ⚠ Diferencia grande: revisá que los puntos marcados sean los del plano.';
+    $('hudMsg').textContent = '✓ Galpón orientado con 2 puntos. ' + ctrl;
+    refrescarHUD();
+    return;
   }
-  refrescarHUD();
 }
 
 /* ------------------------------------------------------------
@@ -2628,7 +2621,8 @@ function dibujarMiniPlanta(){
   if(!cv || !S.trazado || !S.trazado.esModelo){ if(cv) cv.classList.add('oculto'); return; }
   const modo = S.planoModo || 'off';
   if(modo === 'off'){ cv.classList.add('oculto'); return; }
-  const colocado = S.grupo && S.grupo.visible;
+  let colocado = S.grupo && S.grupo.visible;
+  if(S.esquinando === 3 || S.esquinando === 4) colocado = false;   // en el plano se elige: vista de plano pura
   if(!colocado && !S.esquinando){ cv.classList.add('oculto'); return; }
   cv.classList.remove('oculto');
   const grande = modo === 'grande';
@@ -2665,7 +2659,15 @@ function dibujarMiniPlanta(){
       g2.beginPath(); g2.moveTo(px, pz);
       g2.lineTo(px + Math.min(M.H, 14) * kFit, pz); g2.stroke();
       g2.fillStyle = '#fff'; g2.font = 'bold ' + Math.round(7*kUi+8) + 'px sans-serif';
-      g2.fillText('⚑ esquina de referencia', px + 8*kUi, pz - 8*kUi);
+      g2.fillText('⚑ punto 1', px + 8*kUi, pz - 8*kUi);
+    }
+    if(S.refP2){
+      const px2 = ox + (S.refP2.x - (M.cx - M.H)) * kFit;
+      const pz2 = oy + (S.refP2.z - (M.cz - M.H)) * kFit;
+      g2.strokeStyle = '#FF6A13'; g2.lineWidth = 3*kUi;
+      g2.beginPath(); g2.arc(px2, pz2, 7*kUi, 0, Math.PI*2); g2.stroke();
+      g2.fillStyle = '#fff'; g2.font = 'bold ' + Math.round(7*kUi+8) + 'px sans-serif';
+      g2.fillText('◎ punto 2', px2 + 9*kUi, pz2 - 9*kUi);
     }
     return;
   }
@@ -2755,7 +2757,7 @@ function cerrarAR(){
   S.grupo = null; S.anclado = false;
   S.anchor = null; S.ancListo = false; S.ultimoHit = null;
   S.midiendo = false; S.medGrp = null; S.medPts = [];
-  S.esquinando = 0; S.esqP1 = null;
+  S.esquinando = 0; S.esqP1 = null; S.refP2 = null;
   S.escuadrando = false; S.escPts = []; S.autoPend = 0; S.autoNube = null; S.modeloPts = null; S.autoCorriendo = false; S.marcadorModo = false; S.nubeAcum = null;
   const _oclTex = S.ocl && S.ocl.tex;
   if(_oclTex) setTimeout(() => { try{ _oclTex.dispose(); }catch(e){} }, 1200);
@@ -2809,7 +2811,7 @@ function gesFin(ev){
 }
 $('gestos').addEventListener('pointerup', ev => {
   // PASO 0 del anclaje: un TAP sobre el plano elige el punto de referencia
-  if(S.esquinando === 3 && !S._gesMovio && S._planPrev && S.trazado && S.trazado.refCandidatos){
+  if((S.esquinando === 3 || S.esquinando === 4) && !S._gesMovio && S._planPrev && S.trazado && S.trazado.refCandidatos){
     const pp = S._planPrev, M = pp.M;
     const lx = (ev.clientX - pp.ox) / pp.kFit + (M.cx - M.H);
     const lz = (ev.clientY - pp.oy) / pp.kFit + (M.cz - M.H);
@@ -2822,10 +2824,15 @@ $('gestos').addEventListener('pointerup', ev => {
       if(dd < md){ md = dd; mejor = i; }
     }
     if(mejor >= 0){
-      S.trazado.refEsquina.x = cds[mejor];
-      S.trazado.refEsquina.z = cds[mejor+1];
-      if(S.grupo && S.grupo.userData.grpRef) S.grupo.userData.grpRef.position.copy(S.trazado.refEsquina);
-      $('hudMsg').textContent = 'Punto de referencia movido a esa esquina ✔. Ajustá con más zoom si querés, y después: "✔ Usar este punto".';
+      if(S.esquinando === 3){
+        S.trazado.refEsquina.x = cds[mejor];
+        S.trazado.refEsquina.z = cds[mejor+1];
+        if(S.grupo && S.grupo.userData.grpRef) S.grupo.userData.grpRef.position.copy(S.trazado.refEsquina);
+        $('hudMsg').textContent = 'Punto 1 elegido ✔. Confirmalo con el botón CELESTE de abajo (pestaña AJUSTE).';
+      }else{
+        S.refP2 = { x: cds[mejor], z: cds[mejor+1] };
+        $('hudMsg').textContent = 'Punto 2 elegido (naranja) ✔. Confirmalo con el botón CELESTE y andá a marcarlo en el galpón.';
+      }
     }else{
       $('hudMsg').textContent = 'Ahí no hay ninguna esquina del modelo: hacé más zoom y tocá justo sobre una esquina del plano.';
     }
@@ -2980,18 +2987,26 @@ $('panelAR').addEventListener('click', ev => {
   }
   if(a==='esquina'){
     if(S.esquinando === 3){
-      // punto de referencia confirmado → a marcar el rincón real
+      // punto 1 confirmado → a marcarlo en la realidad
       S.esquinando = 1;
       $('btnEsquina').classList.remove('destacado');
       $('btnEsquina').textContent = 'Esquina: cancelar';
-      $('hudMsg').textContent = 'Punto confirmado ✔. Ahora andá a ESA esquina real del galpón, apuntá la retícula al rincón (pared = retícula cian, más preciso) y tocá.';
-    }else if(S.esquinando === 2){
-      // VOLVER ATRÁS: la esquina marcada estaba mal — se vuelve a elegir
-      S.esquinando = 1; S.esqP1 = null;
-      $('btnEsquina').textContent = 'Esquina: cancelar';
-      $('hudMsg').textContent = '↩ De nuevo: apuntá la retícula al rincón correcto del piso y tocá.';
+      $('hudMsg').textContent = 'Punto 1 confirmado ✔. Andá a ESE lugar real del galpón, apuntá la retícula (pared = cian, más preciso) y tocá.';
+    }else if(S.esquinando === 4){
+      if(!S.refP2){
+        $('hudMsg').textContent = 'Todavía no elegiste el 2º punto: tocá una esquina en el plano (con zoom).';
+      }else{
+        S.esquinando = 5;
+        $('btnEsquina').classList.remove('destacado');
+        $('btnEsquina').textContent = '↩ Volver al plano';
+        $('hudMsg').textContent = 'Punto 2 confirmado ✔. Caminá hasta ESE lugar real (mirá el plano de guía), apuntá la retícula y tocá. Ahí queda todo orientado.';
+      }
+    }else if(S.esquinando === 5){
+      S.esquinando = 4;
+      const bE5 = $('btnEsquina'); bE5.textContent = '✔ Usar 2º punto'; bE5.classList.add('destacado');
+      $('hudMsg').textContent = '↩ De vuelta al plano: elegí otra vez el 2º punto.';
     }else if(S.esquinando === 1){
-      S.esquinando = 0; S.esqP1 = null;
+      S.esquinando = 0; S.esqP1 = null; S.refP2 = null;
       $('btnEsquina').classList.remove('destacado');
       $('btnEsquina').textContent = 'Anclar esquina';
       $('hudMsg').textContent = 'Anclaje por esquina cancelado.';
