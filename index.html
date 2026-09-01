@@ -445,7 +445,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
    ============================================================ */
 /* THREE UMD embebido arriba */
 
-const VERSION = 'v2.2.0';
+const VERSION = 'v2.3.0';
 
 /* ------------------------------------------------------------
    1. ESTADO
@@ -1281,7 +1281,8 @@ function construirGrupoModelo(tz){
   }
   const mat = new THREE.MeshBasicMaterial({
     vertexColors:true, side:THREE.DoubleSide,
-    transparent:false, opacity:1, depthWrite:true
+    transparent:false, opacity:1, depthWrite:true,
+    polygonOffset:true, polygonOffsetFactor:1, polygonOffsetUnits:2
   });
   const mesh = new THREE.Mesh(tz.geo, mat);
   mesh.userData.esModelo3D = true;   // el botón Opacidad lo alterna sólido/fantasma
@@ -1875,6 +1876,11 @@ async function iniciarAR(){
   // el espacio de referencia tiene que coincidir con lo que la sesión otorgó:
   // si three pide 'local-floor' en una sesión sin esa feature, setSession revienta
   // y la pantalla queda "en la cámara" sin dibujar nada.
+  try{
+    const nat = (typeof XRWebGLLayer !== 'undefined' && XRWebGLLayer.getNativeFramebufferScaleFactor)
+      ? XRWebGLLayer.getNativeFramebufferScaleFactor(session) : 1;
+    renderer.xr.setFramebufferScaleFactor(Math.min(Math.max(nat || 1, 1), 1.4));
+  }catch(e){}
   renderer.xr.setReferenceSpaceType(usaFloor ? 'local-floor' : 'local');
   try{
     await renderer.xr.setSession(session);
@@ -2079,6 +2085,17 @@ async function iniciarAR(){
       S.autoPend--;
       $('hudMsg').textContent = 'Capturando profundidad… ' + S.autoNube.length + ' puntos — seguí moviéndote despacio';
       if(S.autoPend === 0) correrAutoAjuste();
+    }
+
+    // fallback: si el ancla del hit no salio, se crea una libre en la pose actual
+    if(frame && S._pedirAncla && !S.anchor && S.anclado && S.grupo && typeof frame.createAnchor === 'function'){
+      S._pedirAncla = false;
+      try{
+        const gp = S.grupo.position;
+        const gq = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), S.rotY);
+        frame.createAnchor(new XRRigidTransform({x:gp.x, y:gp.y, z:gp.z, w:1}, {x:gq.x, y:gq.y, z:gq.z, w:gq.w}), S.refSpaceLocal)
+          .then(a => instalarAncla(a, S.session)).catch(() => {});
+      }catch(e){}
     }
 
     // ancla: el trazado sigue al ancla (ARCore corrige la deriva solo)
@@ -2577,6 +2594,14 @@ function puntoEsquina(){
     S.grupo.position.y += S.offsetY;
     S.grupo.rotation.y = S.rotY;
     S.grupo.visible = true; S.anclado = true;
+    // ancla fisica de ARCore en el punto 1: cuando el tracking se corrige o
+    // re-localiza (te fuiste a otra oficina), el modelo vuelve solo a su lugar
+    olvidarAncla(S.session);
+    if(S.ultimoHit && typeof S.ultimoHit.createAnchor === 'function'){
+      S.ultimoHit.createAnchor().then(a => instalarAncla(a, S.session)).catch(() => { S._pedirAncla = true; });
+    }else{
+      S._pedirAncla = true;
+    }
     // → a elegir el SEGUNDO punto sobre el plano
     S.esquinando = 4;
     S.planoModo = 'grande';
@@ -2613,6 +2638,7 @@ function puntoEsquina(){
     const bE2 = $('btnEsquina');
     if(bE2){ bE2.classList.remove('destacado'); bE2.textContent = 'Anclar esquina'; }
     const bM2 = $('btnMini'); if(bM2) bM2.textContent = 'Planta: OFF';
+    if(!S.anchor) S._pedirAncla = true;
     sincronizarAncla(); guardarCalib();
     let ctrl = 'Control de escala: plano ' + dPlano.toFixed(2) + ' m · medido ' + dReal.toFixed(2) + ' m (dif ' + Math.round(Math.abs(dif)*100) + ' cm).';
     if(Math.abs(dif) > dPlano * .05 + .3) ctrl += ' ⚠ Diferencia grande: revisá que los puntos marcados sean los del plano.';
@@ -2754,7 +2780,7 @@ let _rendererUnico = null;
 function obtenerRenderer(){
   if(!_rendererUnico){
     const cv = document.createElement('canvas');
-    _rendererUnico = new THREE.WebGLRenderer({ canvas: cv, alpha: true, antialias: false });
+    _rendererUnico = new THREE.WebGLRenderer({ canvas: cv, alpha: true, antialias: true, powerPreference: 'high-performance' });
     _rendererUnico.xr.enabled = true;
   }
   _rendererUnico.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
