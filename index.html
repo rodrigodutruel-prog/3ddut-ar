@@ -373,6 +373,17 @@ body{
       </div>
       <div class="pgrupo">
         <button class="bctrl" data-act="fino" id="btnFino">Ajuste fino: OFF</button>
+        <button class="bctrl" data-act="pasoMm" id="btnPasoMm">Paso: 10 mm</button>
+      </div>
+      <div class="pgrupo">
+        <button class="bctrl" data-act="mov" data-eje="x" data-sig="-1">◀ X−</button>
+        <button class="bctrl" data-act="mov" data-eje="x" data-sig="1">X+ ▶</button>
+        <button class="bctrl" data-act="mov" data-eje="y" data-sig="1">▲ Y+</button>
+        <button class="bctrl" data-act="mov" data-eje="y" data-sig="-1">▼ Y−</button>
+      </div>
+      <div class="pgrupo">
+        <button class="bctrl" data-act="mov" data-eje="h" data-sig="1">↑ Alto +</button>
+        <button class="bctrl" data-act="mov" data-eje="h" data-sig="-1">↓ Alto −</button>
         <button class="bctrl" data-act="escuadrar" id="btnEscuadrar">Escuadrar</button>
         <button class="bctrl" data-act="esquina" id="btnEsquina">Anclar esquina</button>
         <button class="bctrl" data-act="rot90">Girar 90°</button>
@@ -434,7 +445,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
    ============================================================ */
 /* THREE UMD embebido arriba */
 
-const VERSION = 'v2.1.0';
+const VERSION = 'v2.2.0';
 
 /* ------------------------------------------------------------
    1. ESTADO
@@ -2977,6 +2988,33 @@ $('panelAR').addEventListener('click', ev => {
     S.verBandera = S.verBandera === false ? true : false;
     if(S.grupo && S.grupo.userData.grpRef) S.grupo.userData.grpRef.visible = S.verBandera;
     $('btnBandera').textContent = 'Bandera: ' + (S.verBandera ? 'ON' : 'OFF');
+  }
+  if(a==='pasoMm'){
+    const pasos = [1, 5, 10, 50, 100];
+    S.pasoMm = pasos[(pasos.indexOf(S.pasoMm || 10) + 1) % pasos.length];
+    $('btnPasoMm').textContent = 'Paso: ' + S.pasoMm + ' mm';
+  }
+  if(a==='mov'){
+    // mueve SEGÚN LOS EJES DEL PLANO CAD (X+ = derecha del plano, Y+ = arriba
+    // del plano, Alto = vertical), el paso configurado, para cualquier lado
+    const d = (S.pasoMm || 10) / 1000;
+    const sig = parseInt(b.dataset.sig, 10) || 1;
+    const eje = b.dataset.eje;
+    if(eje === 'h'){
+      S.grupo.position.y += d * sig;
+      S.offsetY += d * sig;
+    }else{
+      // eje del plano → local: X+ = local +X · Y+ (norte del plano) = local −Z
+      const lx = (eje === 'x') ? sig : 0;
+      const lz = (eje === 'y') ? -sig : 0;
+      const cy = Math.cos(S.rotY), sy = Math.sin(S.rotY);
+      S.grupo.position.x += (lx*cy + lz*sy) * d;
+      S.grupo.position.z += (-lx*sy + lz*cy) * d;
+    }
+    sincronizarAncla(); guardarCalib();
+    const nom = eje === 'h' ? (sig > 0 ? 'Alto +' : 'Alto −') : (eje.toUpperCase() + (sig > 0 ? '+' : '−'));
+    $('hudMsg').textContent = 'Movido ' + (S.pasoMm || 10) + ' mm en ' + nom + ' (ejes del plano).';
+    refrescarHUD();
   }
   if(a==='mini'){
     const orden = ['grande', 'chico', 'off'];
