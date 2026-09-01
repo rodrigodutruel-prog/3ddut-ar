@@ -54,6 +54,8 @@ body{
 #miniPlanta{ position:fixed; right:10px; top:calc(96px + env(safe-area-inset-top)); z-index:49;
   width:132px; height:132px; border-radius:10px; border:1px solid rgba(0,174,239,.55);
   background:rgba(9,9,11,.55); pointer-events:none; }
+#miniPlanta.grande{ right:0; top:0; left:0; bottom:0; width:100vw; height:100vh;
+  border:none; border-radius:0; background:rgba(9,9,11,.30); }
 .panel-ar{ position:relative; z-index:48; }
 .hud{ position:relative; z-index:47; }
 .cv-marcador{ width:min(160px,40vw); height:auto; border-radius:8px; border:1px solid var(--borde); image-rendering:pixelated; }
@@ -430,7 +432,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
    ============================================================ */
 /* THREE UMD embebido arriba */
 
-const VERSION = 'v1.5.0';
+const VERSION = 'v1.6.0';
 
 /* ------------------------------------------------------------
    1. ESTADO
@@ -2435,6 +2437,8 @@ function puntoEsquina(){
     S.grupo.rotation.y = S.rotY;
     S.grupo.visible = true; S.anclado = true;
     S.esquinando = 2;
+    S.planoModo = 'grande';   // la vista en planta se abre sola para ubicarse
+    const bM = $('btnMini'); if(bM) bM.textContent = 'Planta: GRANDE';
     $('hudMsg').textContent = 'Esquina fijada ⚑. Ahora caminá unos metros SIGUIENDO LA PARED de referencia, apuntá la retícula al piso junto a la pared y tocá.';
   }else{
     const dir = p.clone().sub(S.esqP1); dir.y = 0;
@@ -2465,8 +2469,14 @@ function puntoEsquina(){
 function dibujarMiniPlanta(){
   const cv = $('miniPlanta');
   if(!cv || !S.trazado || !S.trazado.miniPts || !S.grupo || !S.grupo.visible){ if(cv) cv.classList.add('oculto'); return; }
-  if(S.verMini === false){ cv.classList.add('oculto'); return; }
+  const modo = S.planoModo || 'chico';
+  if(modo === 'off' || S.verMini === false){ cv.classList.add('oculto'); return; }
   cv.classList.remove('oculto');
+  const grande = modo === 'grande';
+  cv.classList.toggle('grande', grande);
+  const objW = grande ? window.innerWidth : 300, objH = grande ? window.innerHeight : 300;
+  if(cv.width !== objW || cv.height !== objH){ cv.width = objW; cv.height = objH; }
+  const kUi = grande ? 2.1 : 1;
   const g2 = cv.getContext('2d');
   const W = cv.width, H = cv.height;
   const cam = (S.renderer && S.renderer.xr && S.renderer.xr.isPresenting) ? S.renderer.xr.getCamera() : S.camera;
@@ -2497,19 +2507,25 @@ function dibujarMiniPlanta(){
 
   g2.clearRect(0,0,W,H);
   // silueta del modelo
-  g2.fillStyle = 'rgba(0,194,209,.85)';
+  g2.fillStyle = grande ? 'rgba(0,194,209,.9)' : 'rgba(0,194,209,.85)';
   const pts = S.trazado.miniPts;
+  const pq = 1.6 * kUi;
   for(let i=0;i<pts.length;i+=2){
     const [wx,wz] = aMundo(pts[i], pts[i+1]);
     const [px,pz] = aPx(wx,wz);
-    g2.fillRect(px, pz, 1.6, 1.6);
+    g2.fillRect(px, pz, pq, pq);
   }
-  // bandera de la esquina de referencia
   if(S.trazado.refEsquina){
-    const [wx,wz] = aMundo(S.trazado.refEsquina.x, S.trazado.refEsquina.z);
-    const [px,pz] = aPx(wx,wz);
+    // pared de referencia: línea ámbar desde la esquina
+    const Lp = Math.min(Math.max(S.trazado.medidas.x * .5, 4), 14) / S.escala;
+    const [ex,ez] = aMundo(S.trazado.refEsquina.x, S.trazado.refEsquina.z);
+    const [fx,fz] = aMundo(S.trazado.refEsquina.x + Lp*S.escala, S.trazado.refEsquina.z);
+    const [px1,pz1] = aPx(ex,ez), [px2,pz2] = aPx(fx,fz);
+    g2.strokeStyle = '#FFC400'; g2.lineWidth = 2*kUi;
+    g2.beginPath(); g2.moveTo(px1,pz1); g2.lineTo(px2,pz2); g2.stroke();
+    // bandera de la esquina de referencia
     g2.fillStyle = '#E31E24';
-    g2.beginPath(); g2.arc(px, pz, 5, 0, Math.PI*2); g2.fill();
+    g2.beginPath(); g2.arc(px1, pz1, 5*kUi, 0, Math.PI*2); g2.fill();
   }
   // vos: flecha amarilla con tu rumbo
   const [cxp,czp] = aPx(cp.x, cp.z);
@@ -2517,7 +2533,9 @@ function dibujarMiniPlanta(){
   g2.save();
   g2.translate(cxp, czp); g2.rotate(ang);
   g2.fillStyle = '#FFC400';
-  g2.beginPath(); g2.moveTo(9,0); g2.lineTo(-6,-5.5); g2.lineTo(-3,0); g2.lineTo(-6,5.5); g2.closePath(); g2.fill();
+  g2.strokeStyle = 'rgba(9,9,11,.8)'; g2.lineWidth = 1.5*kUi;
+  g2.beginPath(); g2.moveTo(9*kUi,0); g2.lineTo(-6*kUi,-5.5*kUi); g2.lineTo(-3*kUi,0); g2.lineTo(-6*kUi,5.5*kUi); g2.closePath();
+  g2.fill(); g2.stroke();
   g2.restore();
 }
 
@@ -2704,9 +2722,11 @@ $('panelAR').addEventListener('click', ev => {
     $('btnBandera').textContent = 'Bandera: ' + (S.verBandera ? 'ON' : 'OFF');
   }
   if(a==='mini'){
-    S.verMini = S.verMini === false ? true : false;
-    $('btnMini').textContent = 'Planta: ' + (S.verMini ? 'ON' : 'OFF');
-    if(!S.verMini) $('miniPlanta').classList.add('oculto');
+    const orden = ['grande', 'chico', 'off'];
+    S.planoModo = orden[(orden.indexOf(S.planoModo || 'chico') + 1) % orden.length];
+    S.verMini = S.planoModo !== 'off';
+    $('btnMini').textContent = 'Planta: ' + (S.planoModo === 'grande' ? 'GRANDE' : (S.planoModo === 'chico' ? 'chica' : 'OFF'));
+    if(S.planoModo === 'off') $('miniPlanta').classList.add('oculto');
   }
   if(a==='esquina'){
     if(S.esquinando){
