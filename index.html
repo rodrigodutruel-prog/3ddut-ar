@@ -445,7 +445,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
    ============================================================ */
 /* THREE UMD embebido arriba */
 
-const VERSION = 'v2.6.1';
+const VERSION = 'v2.7.0';
 
 /* ------------------------------------------------------------
    1. ESTADO
@@ -1111,8 +1111,8 @@ async function parseSTLBinGrande(buf, n, avance){
 }
 
 function parseOBJ(txt){
-  const vs = [], cols = [], tris = [];
-  let hayColor = false;
+  const vs = [], cols = [], tris = [], trisVid = [];
+  let hayColor = false, enVidrio = false;
   const lineas = txt.split('\n');
   for(let i=0;i<lineas.length;i++){
     const l = lineas[i];
@@ -1125,27 +1125,40 @@ function parseOBJ(txt){
     }else if(l.charCodeAt(0)===102 && l.charCodeAt(1)===32){    // "f "
       const p = l.trim().split(/\s+/).slice(1)
         .map(t => { let k = parseInt(t,10); return k<0 ? vs.length/3 + k : k-1; });
-      for(let j=2;j<p.length;j++) tris.push(p[0], p[j-1], p[j]); // fan
+      const dest = enVidrio ? trisVid : tris;
+      for(let j=2;j<p.length;j++) dest.push(p[0], p[j-1], p[j]); // fan
+    }else if(l.charCodeAt(0)===111 && l.charCodeAt(1)===32){    // "o "
+      // objeto "vidrio": PlanObra manda ahí cristales y agua → translúcidos
+      enVidrio = /vidrio|glass|agua/i.test(l);
     }
   }
-  if(!tris.length) throw new Error('OBJ sin caras legibles.');
-  const pos = new Float32Array(tris.length*3);
-  for(let i=0;i<tris.length;i++){
-    const k = tris[i]*3;
+  if(!tris.length && !trisVid.length) throw new Error('OBJ sin caras legibles.');
+  // sólido primero, vidrio al final → dos grupos de material
+  const nOp = tris.length;
+  const todos = tris.concat(trisVid);
+  const pos = new Float32Array(todos.length*3);
+  for(let i=0;i<todos.length;i++){
+    const k = todos[i]*3;
     pos[i*3]=vs[k]; pos[i*3+1]=vs[k+1]; pos[i*3+2]=vs[k+2];
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(pos,3));
+  if(trisVid.length){
+    g.addGroup(0, nOp, 0);
+    g.addGroup(nOp, trisVid.length, 1);
+    g.userData.hayVidrio = true;
+  }
+  const trisIdx = todos;
   g.computeVertexNormals();
   if(hayColor){
     // COLORES REALES del archivo × la misma luz fija de las otras pieles
     // (sin la luz horneada el modelo queda chato y no se leen los volúmenes)
     const nrm = g.getAttribute('normal');
-    const col = new Float32Array(tris.length*3);
+    const col = new Float32Array(trisIdx.length*3);
     const L = new THREE.Vector3(.45,.78,.42).normalize();
     const nv = new THREE.Vector3();
-    for(let i=0;i<tris.length;i++){
-      const k = tris[i]*3;
+    for(let i=0;i<trisIdx.length;i++){
+      const k = trisIdx[i]*3;
       nv.set(nrm.getX(i), nrm.getY(i), nrm.getZ(i));
       const lam = .48 + .52*Math.abs(nv.dot(L));
       col[i*3]   = Math.min(1, cols[k]   * lam);
@@ -1395,10 +1408,19 @@ function construirGrupoModelo(tz){
     transparent:false, opacity:1, depthWrite:true,
     polygonOffset:true, polygonOffsetFactor:1, polygonOffsetUnits:2
   });
-  const mesh = new THREE.Mesh(tz.geo, mat);
+  // VIDRIOS del OBJ de PlanObra: segundo grupo de la geometría → material translúcido
+  let matVid = null;
+  if(tz.geo.userData.hayVidrio && tz.geo.groups && tz.geo.groups.length > 1){
+    matVid = new THREE.MeshBasicMaterial({
+      vertexColors:true, side:THREE.DoubleSide,
+      transparent:true, opacity:.35, depthWrite:false
+    });
+  }
+  const mesh = new THREE.Mesh(tz.geo, matVid ? [mat, matVid] : mat);
   mesh.userData.esModelo3D = true;   // el botón Opacidad lo alterna sólido/fantasma
   g.add(mesh);
   g.userData.matLuz = mat;           // la estimación de luz ambiente modula este material
+  if(matVid) g.userData.matVidrio = matVid;
 
   // sombra suave bajo el modelo — solo visible en modo MAQUETA (asienta la
   // pieza sobre la mesa); a escala 1:1 sería una mancha gigante en el piso
@@ -2309,6 +2331,7 @@ async function iniciarAR(){
           const objetivo = Math.min(1.2, Math.max(.55, .45 + Math.cbrt(i) * .65));
           S._luzK += (objetivo - S._luzK) * .08;
           S.grupo.userData.matLuz.color.setScalar(S._luzK);
+          if(S.grupo.userData.matVidrio) S.grupo.userData.matVidrio.color.setScalar(S._luzK);
         }
       }catch(e){}
     }
@@ -3183,10 +3206,14 @@ $('panelAR').addEventListener('click', ev => {
       const op = niveles[S.opNivel];
       S.grupo.traverse(o => {
         if(o.userData.esModelo3D){
-          o.material.opacity = op;
-          o.material.transparent = op < .99;
-          o.material.depthWrite = op >= .99;
-          o.material.needsUpdate = true;
+          const mats = Array.isArray(o.material) ? o.material : [o.material];
+          mats.forEach((m, i) => {
+            const esVid = i > 0;   // el 2º material es el vidrio: siempre translúcido
+            m.opacity = esVid ? Math.min(.35, op) : op;
+            m.transparent = esVid || op < .99;
+            m.depthWrite = !esVid && op >= .99;
+            m.needsUpdate = true;
+          });
         }
       });
       $('hudMsg').textContent = 'Transparencia: ' + Math.round(op*100) + '%';
