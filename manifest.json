@@ -35,8 +35,10 @@
             "model/obj",
             "application/sla",
             "application/octet-stream",
+            "application/json",
             ".stl",
-            ".obj"
+            ".obj",
+            ".json"
           ]
         }
       ]

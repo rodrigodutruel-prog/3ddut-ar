@@ -286,14 +286,14 @@ body{
       <div class="fila">
         <button id="btnArchivo" class="btn-neon secundario">Cargar JSON</button>
         <button id="btnDemo" class="btn-neon secundario">Trazado demo</button>
-        <button id="btn3DFile" class="btn-neon secundario">Cargar 3D (STL/OBJ)</button>
+        <button id="btn3DFile" class="btn-neon secundario">Cargar 3D (STL/OBJ/CroquisObra)</button>
         <select id="selUnid" class="sel-unid" title="Unidades del modelo 3D">
           <option value="mm" selected>mm</option>
           <option value="cm">cm</option>
           <option value="m">m</option>
         </select>
         <input type="file" id="inpArchivo" accept=".json,application/json" hidden>
-        <input type="file" id="inp3D" accept=".stl,.obj" hidden>
+        <input type="file" id="inp3D" accept=".stl,.obj,.json" hidden>
       </div>
       <div id="infoTrazado" class="info-trazado">
         <span class="ms-badge" id="bObra">sin cargar</span>
@@ -332,7 +332,7 @@ body{
       <h2>Cómo se usa</h2>
       <ol class="pasos">
         <li>Instalala desde Chrome (menú ⋮ → <b>Instalar aplicación</b>). Ya publicada en https, funciona el AR y queda cacheada para usar sin señal en el galpón.</li>
-        <li>Cargá <b>cualquier STL/OBJ exportado de Inventor</b> (o un JSON de trazado de conductos).</li>
+        <li>Cargá <b>cualquier STL/OBJ exportado de Inventor</b>, un <b>proyecto de CroquisObra/PlanObra</b> (.json — levanta las paredes 1:1 con puertas y ventanas) o un JSON de trazado de conductos.</li>
         <li>Tocá <b>Iniciar AR</b> y movés el celu hasta que aparezca la retícula en el piso. Tocá la pantalla para <b>anclar</b> el modelo ahí.</li>
         <li><b>Escuadrar</b>: tocá 2 puntos sobre un borde real (pared, base de máquina) y el modelo se alinea a ese borde. <b>Auto-ajuste</b>: con el modelo más o menos encima de la pieza real, la app lo encaja usando la profundidad de la cámara.</li>
         <li><b>Marcador impreso</b>: imprimí el marcador, pegalo en la pieza o la mesa, y el modelo se posiciona solo al reconocerlo (Chrome pide activar una vez <code>chrome://flags/#webxr-incubations</code>).</li>
@@ -445,7 +445,7 @@ function(t,e){"object"==typeof exports&&"undefined"!=typeof module?e(exports):"f
    ============================================================ */
 /* THREE UMD embebido arriba */
 
-const VERSION = 'v2.3.0';
+const VERSION = 'v2.4.0';
 
 /* ------------------------------------------------------------
    1. ESTADO
@@ -1136,13 +1136,93 @@ function parseOBJ(txt){
   return g;
 }
 
+// ── PROYECTOS DE CROQUISOBRA / PLANOBRA (JSON con walls/opens/SET) ──────────
+// Levanta las paredes en 3D a escala 1:1 con sus aberturas (misma semántica
+// de alturas que la vista 3D de PlanObra) + el marco del lote en el piso.
+// El (0,0) del proyecto es la esquina del lote → punto de referencia natural
+// para el replanteo con el flujo de 2 puntos.
+function esProyectoPlanObra(d){
+  return !!(d && Array.isArray(d.walls) && d.walls.length && d.SET);
+}
+function parsePlanObra(d){
+  if(!esProyectoPlanObra(d)) return null;
+  const SET = d.SET, H = +SET.hWall || 3;
+  const opens = Array.isArray(d.opens) ? d.opens : [];
+  const pos = [];
+  // caja extruida alineada a la pared: base (bx,bz), dirección (ux,uz),
+  // tramo s0..s1 a lo largo, semi-espesor a lo ancho, altura y0..y1.
+  // PlanObra: x → X local, y (abajo del plano) → +Z local, altura → Y.
+  function caja(bx, bz, ux, uz, s0, s1, semi, y0, y1){
+    if(s1 - s0 < .001 || y1 - y0 < .001) return;
+    const nx = -uz, nz = ux;
+    const e = [
+      [bx+ux*s0+nx*semi, bz+uz*s0+nz*semi], [bx+ux*s1+nx*semi, bz+uz*s1+nz*semi],
+      [bx+ux*s1-nx*semi, bz+uz*s1-nz*semi], [bx+ux*s0-nx*semi, bz+uz*s0-nz*semi]
+    ];
+    const lo = e.map(p => [p[0], y0, p[1]]), hi = e.map(p => [p[0], y1, p[1]]);
+    const T = (a,b,c) => pos.push(a[0],a[1],a[2], b[0],b[1],b[2], c[0],c[1],c[2]);
+    for(let i=0;i<4;i++){ const j=(i+1)%4; T(lo[i],lo[j],hi[j]); T(lo[i],hi[j],hi[i]); }
+    T(hi[0],hi[1],hi[2]); T(hi[0],hi[2],hi[3]);
+    T(lo[2],lo[1],lo[0]); T(lo[3],lo[2],lo[0]);
+  }
+  // alturas de aberturas — copiadas de PlanObra (openHeight/openSill/etc.)
+  const esVentana = o => o.kind === 'ventana' || o.kind === 'ventiluz';
+  const altoHoja  = o => o.h ? o.h : (o.kind === 'corredizaBano' ? 2.4 : 2.05);
+  const antepecho = o => o.sill !== undefined ? o.sill : (o.kind === 'ventiluz' ? 1.8 : .9);
+  const luz       = o => esVentana(o) ? (o.openH || (o.kind === 'ventiluz' ? .4 : (+SET.hCarp || 1.1))) : altoHoja(o);
+  const dintelFijo= o => (o.kind === 'puerta' && o.transom) ? Math.max(.15, o.transomH || .4) : 0;
+  const techoHueco= o => esVentana(o) ? Math.min(H, antepecho(o) + luz(o)) : Math.min(H, altoHoja(o) + dintelFijo(o));
+
+  for(const w of d.walls){
+    const dx = w.x2 - w.x1, dz = w.y2 - w.y1, L = Math.hypot(dx, dz);
+    if(!(L > .01)) continue;
+    const ux = dx/L, uz = dz/L, semi = (+w.th || +SET.thick || .15)/2;
+    const hW = +w.h || H;
+    const huecos = opens.filter(o => o.wall === w.id && o.w > 0 && o.t >= 0 && o.t <= 1)
+      .map(o => ({ a: Math.max(0, o.t*L - o.w/2), b: Math.min(L, o.t*L + o.w/2),
+                   y0: esVentana(o) ? Math.max(0, antepecho(o)) : 0,
+                   y1: Math.min(hW, techoHueco(o)) }))
+      .sort((p,q) => p.a - q.a);
+    let s = 0;
+    for(const o of huecos){
+      if(o.a > s) caja(w.x1, w.y1, ux, uz, s, o.a, semi, 0, hW);                 // tramo macizo
+      if(o.y0 > .01)      caja(w.x1, w.y1, ux, uz, o.a, o.b, semi, 0, o.y0);     // antepecho
+      if(o.y1 < hW - .01) caja(w.x1, w.y1, ux, uz, o.a, o.b, semi, o.y1, hW);    // dintel
+      s = Math.max(s, o.b);
+    }
+    if(s < L - .001) caja(w.x1, w.y1, ux, uz, s, L, semi, 0, hW);
+  }
+
+  // marco del LOTE en el piso (2 cm de alto): se ve el terreno completo y el
+  // (0,0) —la esquina del lote— queda dentro del modelo como referencia
+  if(SET.lot && +SET.lotW > 2 && +SET.lotH > 2){
+    const LW = +SET.lotW, LH = +SET.lotH;
+    caja(0, 0,  1, 0, 0, LW, .025, 0, .02);
+    caja(0, LH, 1, 0, 0, LW, .025, 0, .02);
+    caja(0, 0,  0, 1, 0, LH, .025, 0, .02);
+    caja(LW, 0, 0, 1, 0, LH, .025, 0, .02);
+  }
+
+  if(!pos.length) return null;
+  const g2 = new THREE.BufferGeometry();
+  g2.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
+  g2.computeVertexNormals();
+  return g2;
+}
+
 function cargarModelo3D(file){
   const ext = (file.name.split('.').pop()||'').toLowerCase();
   const fr = new FileReader();
   fr.onload = async () => {
     try{
-      let geo;
-      if(ext === 'obj'){ geo = parseOBJ(fr.result); }
+      let geo, esPlanObra = false;
+      if(ext === 'json'){
+        const d = JSON.parse(fr.result);
+        geo = parsePlanObra(d);
+        if(!geo) throw new Error('Este JSON no tiene paredes de PlanObra/CroquisObra.');
+        esPlanObra = true;
+      }
+      else if(ext === 'obj'){ geo = parseOBJ(fr.result); }
       else{
         let nT = 0;
         if(fr.result.byteLength >= 84){
@@ -1159,10 +1239,14 @@ function cargarModelo3D(file){
           geo = parseSTL(fr.result);
         }
       }
-      const f = { mm:0.001, cm:0.01, m:1 }[$('selUnid').value] || 0.001;
-      geo.scale(f,f,f);
-      // Inventor exporta Z-arriba; three usa Y-arriba
-      geo.rotateX(-Math.PI/2);
+      // PlanObra ya viene en metros y con Y-arriba (lo arma parsePlanObra);
+      // STL/OBJ traen la unidad del selector y Z-arriba de Inventor.
+      if(!esPlanObra){
+        const f = { mm:0.001, cm:0.01, m:1 }[$('selUnid').value] || 0.001;
+        geo.scale(f,f,f);
+        // Inventor exporta Z-arriba; three usa Y-arriba
+        geo.rotateX(-Math.PI/2);
+      }
       // centrar en planta y apoyar en el piso
       geo.computeBoundingBox();
       const bb = geo.boundingBox, c = bb.getCenter(new THREE.Vector3());
@@ -1198,7 +1282,7 @@ function cargarModelo3D(file){
       const _mini = new Float32Array(Math.ceil(_posM.count/_salto)*2);
       let _mk = 0;
       for(let _i=0;_i<_posM.count;_i+=_salto){ _mini[_mk++]=_posM.getX(_i); _mini[_mk++]=_posM.getZ(_i); }
-      S.trazado = { esModelo:true, geo:geo, obra:file.name, medidas:med, tris:nTris, refEsquina:refEsq, miniPts:_mini.slice(0,_mk), refCandidatos:new Float32Array(_cand) };
+      S.trazado = { esModelo:true, esPlanObra:esPlanObra, geo:geo, obra:file.name, medidas:med, tris:nTris, refEsquina:refEsq, miniPts:_mini.slice(0,_mk), refCandidatos:new Float32Array(_cand) };
       prepararPlanoImagen(S.trazado);
       pintarInfo(S.trazado);
       $('estadoAR').classList.remove('err');
@@ -1208,7 +1292,7 @@ function cargarModelo3D(file){
       $('estadoAR').textContent='Error al leer el 3D: ' + e.message;
     }
   };
-  if(ext==='obj') fr.readAsText(file); else fr.readAsArrayBuffer(file);
+  if(ext==='obj' || ext==='json') fr.readAsText(file); else fr.readAsArrayBuffer(file);
 }
 
 // FOTO DE PLANO: un render cenital ortográfico del modelo, hecho UNA vez al
@@ -1967,7 +2051,7 @@ async function iniciarAR(){
   // MODELO GRANDE (un galpón): el flujo normal de "tocá el piso y aparece
   // todo" marea — el edificio te cae encima en cualquier lado. Acá se arranca
   // DIRECTO en el modo esquina: primero el rincón real, después la pared.
-  if(S.trazado && S.trazado.esModelo && Math.max(S.trazado.medidas.x, S.trazado.medidas.z) >= 12){
+  if(S.trazado && S.trazado.esModelo && (S.trazado.esPlanObra || Math.max(S.trazado.medidas.x, S.trazado.medidas.z) >= 12)){
     S.esquinando = 3;  S.refP2 = null;      // paso 0: ELEGIR el punto de referencia
     S.escala = 1;                            // los modelos van SIEMPRE 1:1
     S.planoModo = 'grande'; S.planZoom = 1; S.planPan = { x:0, y:0 };
@@ -3476,7 +3560,12 @@ $('inpArchivo').addEventListener('change', ev => {
   if(!f) return;
   const fr = new FileReader();
   fr.onload = () => {
-    try{ cargar(JSON.parse(fr.result)); }
+    try{
+      const d = JSON.parse(fr.result);
+      // proyecto de CroquisObra/PlanObra → va por el camino de modelos 3D
+      if(esProyectoPlanObra(d)){ cargarModelo3D(f); return; }
+      cargar(d);
+    }
     catch(e){
       $('estadoAR').className='nota err';
       $('estadoAR').textContent='JSON inválido: ' + e.message;
@@ -3517,7 +3606,14 @@ if(location.hash === '#compartido'){
         const nombre = decodeURIComponent(r.headers.get('X-Nombre') || 'modelo.stl');
         const blob = await r.blob();
         await cache.delete('./_compartido');
-        cargarModelo3D(new File([blob], nombre));
+        // un .json puede ser proyecto de CroquisObra/PlanObra o una conductería
+        if(/\.json$/i.test(nombre)){
+          const d = JSON.parse(await blob.text());
+          if(esProyectoPlanObra(d)) cargarModelo3D(new File([blob], nombre));
+          else cargar(d);
+        }else{
+          cargarModelo3D(new File([blob], nombre));
+        }
         $('estadoAR').textContent = 'Modelo recibido: ' + nombre + ' — tocá Iniciar AR.';
       }
       history.replaceState(null, '', location.pathname);
