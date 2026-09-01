@@ -1779,7 +1779,7 @@ async function iniciarAR(){
 
   S.renderer = renderer;
   S.scene = nuevaEscena();
-  S.camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.01, 120);
+  S.camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.05, 500);
 
   // retícula de anclaje
   const ret = new THREE.Mesh(
