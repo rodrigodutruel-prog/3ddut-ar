@@ -181,6 +181,15 @@ details summary{ font-size:.8rem; color:var(--txt2); cursor:pointer; margin-top:
           <label><input type="radio" name="ubic" value="toque"><span>Un toque<small>pieza · mueble</small></span></label>
           <label><input type="radio" name="ubic" value="2puntos"><span>2 puntos<small>casa · galpón</small></span></label>
         </div>
+      <div class="lbl">Hoja impresa (solo "Sobre plano impreso")</div>
+      <select id="selImpreso" class="mini" style="width:100%">
+        <option value="0" selected>Medir el QR con la cámara (automático)</option>
+        <option value="1">Impresa al 100 % (como se generó)</option>
+        <option value="0.7071">Reducida una hoja (A1 en A2, A3 en A4): 71 %</option>
+        <option value="0.5">Reducida dos hojas (A1 en A3): 50 %</option>
+        <option value="1.4142">Ampliada una hoja (A3 en A2): 141 %</option>
+        <option value="2">Ampliada dos hojas: 200 %</option>
+      </select>
         <div class="nota"><b>Un toque</b>: el modelo se apoya donde está el aro; tocás otro lugar y se mueve, 2 dedos lo giran, "Fijar" lo clava. <b>2 puntos</b>: elegís dos esquinas en el plano y las marcás en el lugar real — el edificio queda orientado exacto.</div>
         <details>
           <summary>Más opciones</summary>
@@ -191,7 +200,7 @@ details summary{ font-size:.8rem; color:var(--txt2); cursor:pointer; margin-top:
       </div>
     </div>
 
-    <div class="ver"><span id="ver">v3.4.2</span> · 3DDUT Digital Craft</div>
+    <div class="ver"><span id="ver">v3.4.3</span> · 3DDUT Digital Craft</div>
   </main>
 
   <div class="accion">
@@ -290,7 +299,7 @@ details summary{ font-size:.8rem; color:var(--txt2); cursor:pointer; margin-top:
 <script>
 /* configuración de MARCA que lee ar-core.js */
 window.AR_CONFIG = {
-  marca: '3DDUT', version: 'v3.4.2',
+  marca: '3DDUT', version: 'v3.4.3',
   pielDefault: 'altura',             // OBJ sin colores → degradé 3DDUT (teal → naranja)
   cacheCompartido: 'ar-compartido',
   etiquetaNombre: true,
