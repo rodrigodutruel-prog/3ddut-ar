@@ -149,6 +149,8 @@ details summary{ font-size:.8rem; color:var(--txt2); cursor:pointer; margin-top:
           </select>
           <button id="btnMTL" class="mini">+ colores .mtl</button>
           <button id="btnDemo" class="mini">ejemplo</button>
+          <select id="selHojaApp" class="mini" title="Hoja del plano con QR"><option value="a4">hoja A4</option><option value="a3" selected>hoja A3</option><option value="a2">hoja A2</option><option value="a1">hoja A1</option></select>
+          <button id="btnHoja" class="mini" style="border-color:var(--nar);color:var(--nar)" title="Genera el plano con QR de este 3D (PDF a tamaño exacto + OBJ con la hoja adentro)">plano con QR</button>
           <input type="file" id="inp3D" accept=".obj,.mtl,.stl" multiple hidden>
           <input type="file" id="inpMTL" accept=".mtl" hidden>
           <input type="file" id="inpArchivo" accept=".json,application/json" hidden>
@@ -200,7 +202,7 @@ details summary{ font-size:.8rem; color:var(--txt2); cursor:pointer; margin-top:
       </div>
     </div>
 
-    <div class="ver"><span id="ver">v3.4.3</span> · 3DDUT Digital Craft</div>
+    <div class="ver"><span id="ver">v3.5.0</span> · 3DDUT Digital Craft</div>
   </main>
 
   <div class="accion">
@@ -299,7 +301,7 @@ details summary{ font-size:.8rem; color:var(--txt2); cursor:pointer; margin-top:
 <script>
 /* configuración de MARCA que lee ar-core.js */
 window.AR_CONFIG = {
-  marca: '3DDUT', version: 'v3.4.3',
+  marca: '3DDUT', version: 'v3.5.0',
   pielDefault: 'altura',             // OBJ sin colores → degradé 3DDUT (teal → naranja)
   cacheCompartido: 'ar-compartido',
   etiquetaNombre: true,
@@ -313,6 +315,7 @@ window.AR_CONFIG = {
 };
 </script>
 <script src="three.min.js"></script>
+<script src="qrcode.js"></script>
 <script src="ar-core.js"></script>
 <script>
 (function(){
