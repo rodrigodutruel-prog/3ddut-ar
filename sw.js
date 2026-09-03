@@ -1,7 +1,7 @@
 /* Service worker de 3DDUT AR — cachea todo para uso offline en obra.
    HTML y ar-core.js van RED-PRIMERO (no-cache): las correcciones llegan al
    celu apenas hay señal; sin señal se sirve la copia cacheada. */
-const CACHE = '3ddut-ar-v31';
+const CACHE = '3ddut-ar-v32';
 const ASSETS = ["./", "./index.html", "./ar-core.js", "./three.min.js", "./manifest.json", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener('install', e => {
