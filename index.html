@@ -167,6 +167,7 @@ details summary{ font-size:.8rem; color:var(--txt2); cursor:pointer; margin-top:
           <label><input type="radio" name="modo" value="1" checked><span>Real 1:1<small>en la obra</small></span></label>
           <label><input type="radio" name="modo" value="20"><span>Maqueta 1:20<small>sobre la mesa</small></span></label>
           <label><input type="radio" name="modo" value="50"><span>Maqueta 1:50<small>para mostrar</small></span></label>
+          <label><input type="radio" name="modo" value="papel"><span>Sobre plano impreso<small>2 puntos del papel</small></span></label>
         </div>
       </div>
     </div>
@@ -190,7 +191,7 @@ details summary{ font-size:.8rem; color:var(--txt2); cursor:pointer; margin-top:
       </div>
     </div>
 
-    <div class="ver"><span id="ver">v3.1.5</span> · 3DDUT Digital Craft</div>
+    <div class="ver"><span id="ver">v3.2.0</span> · 3DDUT Digital Craft</div>
   </main>
 
   <div class="accion">
@@ -233,6 +234,8 @@ details summary{ font-size:.8rem; color:var(--txt2); cursor:pointer; margin-top:
         <button class="bctrl" data-act="esquina" id="btnEsquina">2 puntos</button>
         <button class="bctrl" data-act="escuadrar" id="btnEscuadrar">Escuadrar</button>
         <button class="bctrl" data-act="auto" id="btnAuto">Auto-ajuste</button>
+        <button class="bctrl" data-act="autocont" id="btnAutoCont">Auto continuo: OFF</button>
+        <button class="bctrl" data-act="deshacerauto">Deshacer ajuste</button>
         <button class="bctrl" data-act="rot90">Girar 90°</button>
         <button class="bctrl" data-act="esc">Escala</button>
       </div>
@@ -287,7 +290,7 @@ details summary{ font-size:.8rem; color:var(--txt2); cursor:pointer; margin-top:
 <script>
 /* configuración de MARCA que lee ar-core.js */
 window.AR_CONFIG = {
-  marca: '3DDUT', version: 'v3.1.5',
+  marca: '3DDUT', version: 'v3.2.0',
   pielDefault: 'altura',             // OBJ sin colores → degradé 3DDUT (teal → naranja)
   cacheCompartido: 'ar-compartido',
   etiquetaNombre: true,
