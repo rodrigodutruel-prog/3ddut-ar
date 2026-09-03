@@ -1,13 +1,13 @@
 {
   "name": "3DDUT AR — tu diseño, parado en la obra",
   "short_name": "3DDUT AR",
-  "description": "Visualizá cualquier diseño de Inventor (STL/OBJ) en realidad aumentada, in situ, con escuadra, auto-ajuste por profundidad y anclaje persistente.",
+  "description": "Visualizá cualquier modelo OBJ de tu CAD en realidad aumentada, in situ, a escala real o como maqueta.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "fullscreen",
   "orientation": "any",
-  "background_color": "#09090B",
-  "theme_color": "#00AEEF",
+  "background_color": "#F3F5F7",
+  "theme_color": "#FF6A13",
   "icons": [
     {
       "src": "icon-192.png",
@@ -31,14 +31,14 @@
         {
           "name": "modelo",
           "accept": [
-            "model/stl",
             "model/obj",
-            "application/sla",
-            "application/octet-stream",
             "application/json",
-            ".stl",
+            "application/octet-stream",
+            "text/plain",
             ".obj",
-            ".json"
+            ".mtl",
+            ".json",
+            ".stl"
           ]
         }
       ]
