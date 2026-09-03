@@ -138,7 +138,7 @@ details summary{ font-size:.8rem; color:var(--txt2); cursor:pointer; margin-top:
       <div class="cont">
         <h2>Archivo</h2>
         <div class="opciones">
-          <button id="btn3DFile" class="opc"><div class="ico">⬡</div><div><b>Modelo OBJ</b><span>Exportado de Inventor, PlanObra o cualquier CAD. Si lo pasás por "Preparar OBJ para AR" en la PC, viene con sus colores.</span></div></button>
+          <button id="btn3DFile" class="opc"><div class="ico">⬡</div><div><b>Modelo OBJ</b><span>Exportado de Inventor, PlanObra o cualquier CAD. Elegí el .obj y el .mtl juntos y abre con sus colores; los modelos gigantes se simplifican solos.</span></div></button>
           <button id="btnArchivo" class="opc json"><div class="ico">⌁</div><div><b>Red de conductos (JSON)</b><span>Trazado de una instalación de aspiración: caños, codos y máquinas.</span></div></button>
         </div>
         <div class="linea-mini">
@@ -149,7 +149,7 @@ details summary{ font-size:.8rem; color:var(--txt2); cursor:pointer; margin-top:
           </select>
           <button id="btnMTL" class="mini">+ colores .mtl</button>
           <button id="btnDemo" class="mini">ejemplo</button>
-          <input type="file" id="inp3D" accept=".obj,.mtl,.stl" hidden>
+          <input type="file" id="inp3D" accept=".obj,.mtl,.stl" multiple hidden>
           <input type="file" id="inpMTL" accept=".mtl" hidden>
           <input type="file" id="inpArchivo" accept=".json,application/json" hidden>
         </div>
@@ -190,7 +190,7 @@ details summary{ font-size:.8rem; color:var(--txt2); cursor:pointer; margin-top:
       </div>
     </div>
 
-    <div class="ver"><span id="ver">v3.0.0</span> · 3DDUT Digital Craft</div>
+    <div class="ver"><span id="ver">v3.0.1</span> · 3DDUT Digital Craft</div>
   </main>
 
   <div class="accion">
@@ -287,7 +287,7 @@ details summary{ font-size:.8rem; color:var(--txt2); cursor:pointer; margin-top:
 <script>
 /* configuración de MARCA que lee ar-core.js */
 window.AR_CONFIG = {
-  marca: '3DDUT', version: 'v3.0.0',
+  marca: '3DDUT', version: 'v3.0.1',
   pielDefault: 'altura',             // OBJ sin colores → degradé 3DDUT (teal → naranja)
   cacheCompartido: 'ar-compartido',
   etiquetaNombre: true,
