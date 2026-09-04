@@ -192,6 +192,9 @@ details summary{ font-size:.8rem; color:var(--txt2); cursor:pointer; margin-top:
         <option value="1.4142">Ampliada una hoja (A3 en A2): 141 %</option>
         <option value="2">Ampliada dos hojas: 200 %</option>
       </select>
+      <div class="lbl">¿Cuánto mide el QR impreso? (medilo con una regla)</div>
+      <input id="qrMedido" class="mini" type="number" inputmode="decimal" step="0.5"
+             placeholder="mm — dejalo vacío si imprimiste al 100 %" style="width:100%">
         <div class="nota"><b>Un toque</b>: el modelo se apoya donde está el aro; tocás otro lugar y se mueve, 2 dedos lo giran, "Fijar" lo clava. <b>2 puntos</b>: elegís dos esquinas en el plano y las marcás en el lugar real — el edificio queda orientado exacto.</div>
         <details>
           <summary>Más opciones</summary>
@@ -202,7 +205,7 @@ details summary{ font-size:.8rem; color:var(--txt2); cursor:pointer; margin-top:
       </div>
     </div>
 
-    <div class="ver"><span id="ver">v3.6.4</span> · 3DDUT Digital Craft</div>
+    <div class="ver"><span id="ver">v3.6.5</span> · 3DDUT Digital Craft</div>
   </main>
 
   <div class="accion">
@@ -302,7 +305,7 @@ details summary{ font-size:.8rem; color:var(--txt2); cursor:pointer; margin-top:
 <script>
 /* configuración de MARCA que lee ar-core.js */
 window.AR_CONFIG = {
-  marca: '3DDUT', version: 'v3.6.4',
+  marca: '3DDUT', version: 'v3.6.5',
   pielDefault: 'altura',             // OBJ sin colores → degradé 3DDUT (teal → naranja)
   cacheCompartido: 'ar-compartido',
   etiquetaNombre: true,
