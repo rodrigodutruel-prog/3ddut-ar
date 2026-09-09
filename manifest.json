@@ -2,6 +2,8 @@
   "name": "3DDUT AR — tu diseño, parado en la obra",
   "short_name": "3DDUT AR",
   "description": "Visualizá cualquier modelo OBJ de tu CAD en realidad aumentada, in situ, a escala real o como maqueta.",
+  "id": "./index.html",
+  "lang": "es-AR",
   "start_url": "./index.html",
   "scope": "./",
   "display": "fullscreen",
@@ -32,6 +34,8 @@
           "name": "modelo",
           "accept": [
             "model/obj",
+            "model/stl",
+            "application/sla",
             "application/json",
             "application/octet-stream",
             "text/plain",

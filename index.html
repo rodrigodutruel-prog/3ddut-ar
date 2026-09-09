@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#FF6A13">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -122,6 +122,7 @@ details summary{ font-size:.8rem; color:var(--txt2); cursor:pointer; margin-top:
 #visor3D{ position:fixed; inset:0; z-index:40; background:#DDE3E8; }
 #visor3D canvas{ display:block; }
 </style>
+<link rel="stylesheet" href="expo.css">
 </head>
 <body>
 
@@ -205,7 +206,7 @@ details summary{ font-size:.8rem; color:var(--txt2); cursor:pointer; margin-top:
       </div>
     </div>
 
-    <div class="ver"><span id="ver">v3.6.7</span> · 3DDUT Digital Craft</div>
+    <div class="ver"><span id="ver">v4.0.0-expo</span> · 3DDUT Digital Craft</div>
   </main>
 
   <div class="accion">
@@ -305,7 +306,7 @@ details summary{ font-size:.8rem; color:var(--txt2); cursor:pointer; margin-top:
 <script>
 /* configuración de MARCA que lee ar-core.js */
 window.AR_CONFIG = {
-  marca: '3DDUT', version: 'v3.6.7',
+  marca: '3DDUT', version: 'v4.0.0-expo',
   pielDefault: 'altura',             // OBJ sin colores → degradé 3DDUT (teal → naranja)
   cacheCompartido: 'ar-compartido',
   etiquetaNombre: true,
@@ -336,12 +337,11 @@ window.AR_CONFIG = {
     const f = !!AR.S.fijado;
     $('rielFijar').classList.toggle('on', f);
     $('rielFijar').innerHTML = f ? '<i>🔒</i>fijado' : '<i>🔓</i>fijar';
-    if(AR.S.session || AR.S.renderer) $('panelAR').classList.remove('oculto');
+    if(!document.getElementById('capaAR').classList.contains('oculto') && (AR.S.session || AR.S.renderer)) $('panelAR').classList.remove('oculto');
   }, 400);
 })();
-if('serviceWorker' in navigator){
-  window.addEventListener('load', function(){ navigator.serviceWorker.register('sw.js').catch(function(e){ console.log('SW:', e); }); });
-}
 </script>
+<script src="expo.js"></script>
+<noscript><p>Activá JavaScript en el navegador para explorar los modelos 3D.</p></noscript>
 </body>
 </html>
