@@ -1,10 +1,10 @@
-/* Offline para expo: una versión completa por aplicación y carpeta.
+/* Uso sin conexión: una versión completa por aplicación y carpeta.
    Actualizaciones esperan al cierre de la sesión o EXPO_ACTIVATE_UPDATE.
    Los modelos del visitante se guardan aparte y nunca se borran aquí. */
 'use strict';
 
 const APP_NAME = '3ddut-ar';
-const VERSION = 'expo-bc33e68c7af3';
+const VERSION = 'ar-f47109af4199';
 const SCOPE = new URL(self.registration.scope);
 const CACHE_PREFIX = APP_NAME + '-shell-' + encodeURIComponent(SCOPE.pathname) + '-';
 const CACHE = CACHE_PREFIX + VERSION;
@@ -13,9 +13,8 @@ const ASSETS = [
   "./ar-core.js",
   "./three.min.js",
   "./qrcode.js",
-  "./expo.js",
-  "./expo.css",
-  "./expo.json",
+  "./ar-app.js",
+  "./modelos.json",
   "./examples/demo.json",
   "./manifest.json",
   "./icon-192.png",
@@ -110,7 +109,7 @@ self.addEventListener('activate', event => {
 let preparing;
 self.addEventListener('message', event => {
   if (event.source && event.source.url && !withinScope(new URL(event.source.url))) return;
-  const type = event.data && event.data.type;
+  const type = String(event.data && event.data.type || '').replace(/^AR_/, 'EXPO_');
   if (type === 'EXPO_ACTIVATE_UPDATE') {
     event.waitUntil(self.skipWaiting());
     return;
