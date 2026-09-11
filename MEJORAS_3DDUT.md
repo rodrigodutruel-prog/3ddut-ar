@@ -1,32 +1,40 @@
-# 3DDUT AR 4.1.0
+# 3DDUT AR 4.3.0
 
-Se conserva la interfaz 3DDUT. Esta actualización se concentra en la colocación, el plano impreso y el visor 3D.
+## Correcciones de esta versión
 
-- **QR con cámara:** lee el QR embebido en el JSON de la Calculadora y verifica su contenido contra la hoja. Funciona sin habilitar reconocimiento experimental de imágenes. Los píxeles se procesan en el teléfono y no se envían a un servidor.
-- **Hoja inclinada:** reconstruye posición y orientación completas. Mide dentro del PNG el QR real, separado del marco negro, para respetar su tamaño relativo.
-- **Referencia perdida:** oculta el modelo al perder el QR y verifica varias lecturas antes de recuperarlo. El fondo de cámara y el modelo corresponden al mismo cuadro, evitando retrasos entre ambos. Pausar imagen congela los dos.
-- **Colocación en obra:** espera una superficie estable, muestra el aro verde y fija el modelo al colocarlo. Los toques accidentales no lo desplazan. Las anclas que llegan tarde se descartan si cambió la sesión o la ubicación.
-- **Calidad y controles:** más detalle en los tubos, iluminación de relleno, materiales y tonos ajustados. En el visor 3D: un dedo gira; dos dedos acercan y desplazan. Se agregan Centrar, Planta e Isométrica. Se corrige la creación de bordes después de cerrar el visor.
-- **Uso sin Internet:** el lector QR y sus dependencias quedan incluidos en el guardado local de la aplicación. Es necesario guardar también el modelo desde Más opciones.
+- El modo de cámara ya no llama a `renderer.setSize` en cada captura. Esa llamada reiniciaba el lienzo WebGL aunque el tamaño no cambiara y podía borrar el modelo mientras el lector procesaba la siguiente imagen. Una prueba nueva reproduce el error de 4.2 y verifica su corrección.
+- **Fijar a la hoja** es el modo recomendado para mover el teléfono. Usa detección de superficies y seguimiento espacial WebXR. La ubicación no depende de seguir leyendo el QR. Las dos cruces determinan posición, orientación y escala.
+- Se requieren una superficie detectada y controles visibles. No degrada a una ubicación supuesta si esas capacidades faltan. La retícula de papel es pequeña y exige más estabilidad que la colocación de un modelo a tamaño real.
+- El recorrido tiene dos pasos: marcar cruz 1 y marcar cruz 2. Rechaza puntos demasiado cercanos o en distintas alturas. Evita mostrar un modelo orientado a medias.
+- Si falta temporalmente la pose de un ancla pero el teléfono conserva seguimiento espacial, mantiene las coordenadas de la sesión. Si se pierde el seguimiento espacial, lo informa y recupera la visualización al volver. Reubicar libera las anclas anteriores.
+- Se conservan la lectura QR local, el seguimiento óptico entre lecturas, los controles 3D y la biblioteca local. La biblioteca también está disponible en 3DDUT.
+- Después de encontrar un archivo por QR, iniciar el modo espacial requiere tocar **Fijar el archivo encontrado a la hoja**. La solicitud WebXR ocurre desde ese gesto, no desde la respuesta asíncrona del lector.
 
-## Usar los planos de la Calculadora
+## Ver el modelo sobre la hoja y moverse
 
-1. Actualizá 3DDUT AR y comprobá que figure **v4.1.0**.
-2. Abrí el JSON exportado con el botón AR de la Calculadora.
-3. Elegí **Sobre plano impreso → QR con cámara** y tocá **Iniciar AR**.
-4. Permití la cámara. Apuntá al QR completo del plano correspondiente, sin reflejos ni pliegues.
-5. Si cambiaste el tamaño al imprimir, indicá la reducción o medí el **marco negro completo**, de borde a borde. El valor por defecto supone impresión al 100 %.
+1. Actualizar con Internet desde **Más opciones → Actualizar aplicación** y comprobar **v4.3.0**. Las APK 4.1.0 existentes abren esta web; no hace falta desinstalarlas.
+2. Abrir el JSON AR de la Calculadora o el OBJ exportado con su plano AR. Se debe usar la hoja de esa misma exportación.
+3. Elegir **Sobre plano impreso → Fijar a la hoja** e **Iniciar AR**.
+4. Apoyar la hoja plana sobre una mesa. Mover despacio la cámara para que detecte la mesa. Apuntar al centro de la cruz 1 y tocar **Marcar cruz 1** cuando el aro esté verde.
+5. Repetir con la cruz 2. A partir de allí se puede cambiar el punto de vista sin mantener el QR en cámara.
+6. La hoja debe permanecer en su lugar. Si se mueve la hoja, usar **Volver a ubicar**. Este modo fija una ubicación en el espacio; no sigue una hoja que alguien levanta o traslada.
 
-El QR debe permanecer visible. Si está tapado o fuera de cámara, el modelo se oculta y vuelve al recuperar la referencia. **Dos cruces** permite una colocación manual en teléfonos con AR compatible. El reconocimiento nativo es una alternativa opcional y solo se utiliza cuando el teléfono confirma que puede rastrear la imagen.
+Si el equipo no ofrece seguimiento espacial, la app lo indica. **Seguir QR** sigue disponible como modo de cámara, pero exige detalles visibles y confirmaciones periódicas del código. Ocultar completamente la referencia o mover muy rápido la cámara puede interrumpir ese seguimiento. **Ver 3D sin cámara** permite explorar sin apuntar a la hoja.
 
-En Ajustar vista se puede corregir la perspectiva si la altura se ve deformada. La cámara web no expone su calibración óptica exacta: el tamaño, el enfoque, la iluminación, el movimiento y la lente influyen en la precisión. Esta visualización no reemplaza una medición de replanteo.
+## Abrir archivos del teléfono con QR
 
-## Verificación
+**Agregar archivos del teléfono** o **Agregar carpeta** permite seleccionar JSON de la Calculadora y OBJ con QR embebido, junto con sus MTL. La biblioteca guarda copias locales; no sube archivos ni imágenes. La selección inicial es necesaria para conceder acceso a los archivos.
 
-44 pruebas Node del motor, lector/pose, estabilidad, sesiones y cachés; 17 pruebas Python; 25 comprobaciones de navegador de la nueva cámara con imágenes sintéticas del formato Calculadora; 19 comprobaciones de la interfaz original. Se comprueba la alineación de la cruz 1 con perspectiva frontal, inclinada y girada; QR equivocado; pérdida/recuperación; cancelación de permisos; cierre de cámara; reapertura y uso sin conexión. En 3DDUT también se comprueba generar un plano desde un OBJ, reabrir el archivo exportado y ubicarlo leyendo su QR.
+Después, **Leer QR y abrir modelo** encuentra el archivo sin elegirlo de nuevo. Se puede abrir en 3D, preparar la colocación fija sobre la hoja o iniciar el seguimiento del QR. Si varias revisiones comparten un QR, se elige la correcta. Un código desconocido no abre otra obra ni navega a una dirección externa.
 
-Se verificó el código y una cámara simulada en Chromium. **Queda pendiente la comprobación física en el Motorola Edge 20 Pro y con el plano concreto del usuario.** La simulación no certifica la precisión ni la fluidez de una cámara real.
+Las copias persisten entre aperturas y funcionan sin Internet una vez descargada la app. Modificar el archivo original no cambia la copia: hay que agregar la nueva revisión. **Quitar copia** elimina únicamente la copia de la biblioteca. Borrar los datos del sitio o del navegador puede quitar esas copias.
 
-Para sincronizar solo 3DDUT: `python sincronizar_core.py --marca 3ddut-ar`. Para verificar sin modificar: agregar `--check`. Las mismas mejoras ya publicadas en MS están habilitadas en 3DDUT.
+## Verificación y alcance
 
-Dependencias locales: [jsQR](https://github.com/cozmo/jsQR) (Apache 2.0) y [js-aruco POSIT/SVD](https://github.com/jcmellado/js-aruco) (MIT). Los commits y SHA-256 están en `vendor/sources.json`; se conservan sus licencias. La orientación del reconocimiento nativo sigue el [documento de WebXR Image Tracking](https://github.com/immersive-web/image-tracking/blob/main/explainer.md).
+Se prueban ambas interfaces, lectura real de los QR de prueba, cámara simulada, geometría 3D y sesiones WebXR con poses simuladas. Las comprobaciones espaciales cubren alineación de las dos cruces, escala, movimiento sin QR, pérdida y recuperación, ausencia de la API opcional de anclas, permisos, salida y capacidades insuficientes. También se prueban biblioteca persistente, uso sin conexión, revisiones duplicadas y solicitud WebXR desde un gesto.
+
+**No se verificó físicamente en el Motorola Edge 20 Pro ni con el plano concreto del usuario.** Estas pruebas verifican el código y sus transformaciones; no certifican la precisión ni la calidad del seguimiento de los sensores reales. La visualización no reemplaza una medición de replanteo.
+
+La detección de superficie y las anclas siguen las API de [WebXR hit testing](https://developer.mozilla.org/en-US/docs/Web/API/XRSession/requestHitTestSource) y [WebXR anchors](https://developer.mozilla.org/en-US/docs/Web/API/XRFrame/createAnchor). Las dependencias locales jsQR, js-aruco y jsfeat conservan licencias y referencias en `vendor/sources.json`.
+
+Sincronizar ambas aplicaciones: `python sincronizar_core.py`. Verificar sin modificar: `python sincronizar_core.py --check`.

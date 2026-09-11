@@ -123,6 +123,8 @@ details summary{ font-size:.8rem; color:var(--txt2); cursor:pointer; margin-top:
 #visor3D canvas{ display:block; }
 </style>
 <link rel="stylesheet" href="ms-paper.css">
+<link rel="stylesheet" href="ms-library.css">
+<link rel="stylesheet" href="ms-anchor.css">
 </head>
 <body>
 
@@ -197,11 +199,11 @@ details summary{ font-size:.8rem; color:var(--txt2); cursor:pointer; margin-top:
              placeholder="mm — dejalo vacío si imprimiste al 100 %" style="width:100%">
       <label class="lbl" for="msModoPapel">Ubicar sobre la hoja</label>
       <select id="msModoPapel" class="mini" style="width:100%">
-        <option value="camara">QR con cámara · recomendado</option>
+        <option value="anclado" selected>Fijar a la hoja · recomendado para moverte</option><option value="camara">Seguir QR · mantenerlo visible</option>
         <option value="manual">Dos cruces · ubicación manual</option>
         <option value="nativo">Reconocimiento del teléfono · si está disponible</option>
       </select>
-      <div class="nota"><b>Sobre plano impreso:</b> abrí el modelo con su plano AR o el JSON de la Calculadora y usá el plano de la misma exportación. Con <b>QR con cámara</b>, la app lee el código y ubica el modelo; no requiere activar opciones experimentales. Mantené el QR completo visible y bien iluminado. Si lo perdés de vista, el modelo se oculta hasta recuperarlo. Medí el <b>marco negro completo</b> si la impresión cambió de tamaño. En obra, esperá el <b>aro verde</b> y tocá: el modelo queda fijado; para moverlo, usá <b>Apoyar de nuevo</b>.</div>
+      <div class="nota"><b>Sobre plano impreso:</b> para recorrer el modelo, elegí <b>Fijar a la hoja</b>. Apoyá la hoja en una mesa, marcá la cruz 1 y la cruz 2 cuando el aro esté verde y mantené la hoja quieta. La posición usa el seguimiento espacial del teléfono; después de colocar no necesita ver el QR. <b>Seguir QR</b> queda como opción para mantener el código a la vista. El lector del inicio busca el archivo guardado en este teléfono.</div>
 
         <details>
           <summary>Más opciones</summary>
@@ -312,7 +314,7 @@ details summary{ font-size:.8rem; color:var(--txt2); cursor:pointer; margin-top:
 <script>
 /* configuración de MARCA que lee ar-core.js */
 window.AR_CONFIG = {
-  marca: '3DDUT', version: 'v4.1.0', mejorasMS: true,
+  marca: '3DDUT', version: 'v4.3.0', mejorasMS: true,
   pielDefault: 'altura',             // OBJ sin colores → degradé 3DDUT (teal → naranja)
   cacheCompartido: 'ar-compartido',
   etiquetaNombre: true,
@@ -334,6 +336,7 @@ window.AR_CONFIG = {
 <script src="vendor/posit1.js"></script>
 <script src="ms-paper.js"></script>
 <script src="ms-stability.js"></script>
+<script src="ms-anchor-ui.js"></script>
 <script>
 (function(){
   const $ = id => document.getElementById(id);
@@ -355,6 +358,7 @@ window.AR_CONFIG = {
 })();
 </script>
 <script src="ar-app.js"></script>
+<script src="ms-library.js"></script>
 <noscript><p>Activá JavaScript en el navegador para explorar los modelos 3D.</p></noscript>
 </body>
 </html>
