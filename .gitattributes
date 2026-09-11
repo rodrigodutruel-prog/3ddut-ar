@@ -3,3 +3,6 @@
 *.mtl -text
 *.stl -text
 *.json -text
+
+# Preserve upstream vendor sources and licenses byte for byte.
+vendor/** -text -whitespace
