@@ -4,7 +4,7 @@
 'use strict';
 
 const APP_NAME = '3ddut-ar';
-const VERSION = 'ar-53e02bc8a9b4';
+const VERSION = 'ar-9f4acc50230a';
 const SCOPE = new URL(self.registration.scope);
 const CACHE_PREFIX = APP_NAME + '-shell-' + encodeURIComponent(SCOPE.pathname) + '-';
 const CACHE = CACHE_PREFIX + VERSION;
