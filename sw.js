@@ -4,7 +4,7 @@
 'use strict';
 
 const APP_NAME = '3ddut-ar';
-const VERSION = 'ar-76f2cab66a4a';
+const VERSION = 'ar-998e5fbeacd1';
 const SCOPE = new URL(self.registration.scope);
 const CACHE_PREFIX = APP_NAME + '-shell-' + encodeURIComponent(SCOPE.pathname) + '-';
 const CACHE = CACHE_PREFIX + VERSION;
@@ -19,6 +19,8 @@ const ASSETS = [
   "./ms-flow.js",
   "./vendor/jsfeat.js",
   "./ms-anchor-ui.js",
+  "./ms-native.js",
+  "./ms-visual.js",
   "./ms-anchor.css",
   "./ms-tracking.js",
   "./ms-paper.js",

@@ -172,7 +172,7 @@ details summary{ font-size:.8rem; color:var(--txt2); cursor:pointer; margin-top:
           <label><input type="radio" name="modo" value="1" checked><span>Real 1:1<small>en la obra</small></span></label>
           <label><input type="radio" name="modo" value="20"><span>Maqueta 1:20<small>sobre la mesa</small></span></label>
           <label><input type="radio" name="modo" value="50"><span>Maqueta 1:50<small>para mostrar</small></span></label>
-          <label><input type="radio" name="modo" value="papel"><span>Sobre plano impreso<small>QR o dos cruces</small></span></label>
+          <label><input type="radio" name="modo" value="papel"><span>Sobre plano impreso<small>QR de la hoja</small></span></label>
         </div>
       </div>
     </div>
@@ -198,12 +198,8 @@ details summary{ font-size:.8rem; color:var(--txt2); cursor:pointer; margin-top:
       <input id="qrMedido" class="mini" type="number" inputmode="decimal" step="0.5"
              placeholder="mm — dejalo vacío si imprimiste al 100 %" style="width:100%">
       <label class="lbl" for="msModoPapel">Ubicar sobre la hoja</label>
-      <select id="msModoPapel" class="mini" style="width:100%">
-        <option value="anclado" selected>Fijar a la hoja · recomendado para moverte</option><option value="camara">Seguir QR · mantenerlo visible</option>
-        <option value="manual">Dos cruces · ubicación manual</option>
-        <option value="nativo">Reconocimiento del teléfono · si está disponible</option>
-      </select>
-      <div class="nota"><b>Sobre plano impreso:</b> para recorrer el modelo, elegí <b>Fijar a la hoja</b>. Apoyá la hoja en una mesa, marcá la cruz 1 y la cruz 2 cuando el aro esté verde y mantené la hoja quieta. La posición usa el seguimiento espacial del teléfono; después de colocar no necesita ver el QR. <b>Seguir QR</b> queda como opción para mantener el código a la vista. El lector del inicio busca el archivo guardado en este teléfono.</div>
+      <select id="msModoPapel" class="mini" style="width:100%"><option value="automatico" selected>QR · ubicación automática</option><option value="camara">Seguir QR visible con cámara</option><option value="anclado">Dos cruces · anclaje manual</option><option value="nativo">Reconocimiento WebXR · si está disponible</option></select>
+      <div class="nota"><b>Sobre plano impreso:</b> en la APK 4.14, el QR ubica el modelo automáticamente y el seguimiento espacial permite mover el teléfono. Mantené la hoja quieta. En el navegador, el seguimiento por cámara necesita mantener el QR visible; también podés usar las dos cruces.</div>
 
         <details>
           <summary>Más opciones</summary>
@@ -314,7 +310,7 @@ details summary{ font-size:.8rem; color:var(--txt2); cursor:pointer; margin-top:
 <script>
 /* configuración de MARCA que lee ar-core.js */
 window.AR_CONFIG = {
-  marca: '3DDUT', version: 'v4.13.0', mejorasMS: true,
+  marca: '3DDUT', version: 'v4.14.0', mejorasMS: true,
   pielDefault: 'altura',             // OBJ sin colores → degradé 3DDUT (teal → naranja)
   cacheCompartido: 'ar-compartido',
   etiquetaNombre: true,
@@ -330,6 +326,7 @@ window.AR_CONFIG = {
 <script src="three.min.js"></script>
 <script src="qrcode.js"></script>
 <script src="ms-tracking.js"></script>
+<script src="ms-visual.js"></script>
 <script src="ar-core.js"></script>
 <script src="vendor/jsQR.js"></script>
 <script src="vendor/svd.js"></script>
@@ -337,6 +334,7 @@ window.AR_CONFIG = {
 <script src="ms-paper.js"></script>
 <script src="ms-stability.js"></script>
 <script src="ms-anchor-ui.js"></script>
+<script src="ms-native.js"></script>
 <script>
 (function(){
   const $ = id => document.getElementById(id);
