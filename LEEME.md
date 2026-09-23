@@ -9,4 +9,4 @@
 
 Abre OBJ (con colores por vértice o por material + .mtl) y JSON de redes de conductos.
 Publicar: commit + push a `main` → https://rodrigodutruel-prog.github.io/3ddut-ar/
-APK: proyecto TWA en ..\3ddut-ar-apk (la URL trae la web nueva sola; el APK se recompila solo para etiquetar la versión).
+APK: proyecto en ..\3ddut-ar-apk (WebView con esta web adentro + vista AR nativa con ARCore). Se recompila y publica con cada versión; el detalle está en ..\..\LEEME_AR.md.
