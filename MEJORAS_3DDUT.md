@@ -1,3 +1,26 @@
+3DDUT AR 4.37.0
+
+- Las tarjetas «Hay una versión nueva» y «Modelo recibido» ya tienen su estilo, y sus botones Guardar en el teléfono / Compartir se leen (salían con letra blanca sobre fondo blanco). El cuadro de Replanteo en obra tampoco tenía legible el botón «Generar la marca».
+- En el flujo de dos cruces sobre la hoja, el riel de botones se oculta (se podía tocar Fijar antes de marcar las cruces).
+- En la aplicación ya no se muestran las opciones de ubicación del navegador, que ahí no aplican.
+- Plano con QR: con el OBJ abierto en cm o en m, la escala y el QR salían mal (diez veces más grande, o «1:0.2»); ahora se calculan con los milímetros reales. Al volver a generar el plano desde un _AR.obj ya no vuelve la hoja vieja.
+- Las aristas negras de los modelos en metros (y de la red de conductos) ya no se pierden: las piezas finas se fundían y faltaba más de la mitad de las aristas.
+- Abren los OBJ con caras de más de 64 vértices (tapas de cilindro de otros programas), que antes daban «índice inválido».
+- Los avisos al abrir un modelo («mide solo 2 cm: cambiá las unidades», «la hoja está en otras unidades») ahora se ven; antes los tapaba el mensaje siguiente.
+- Después de perder el seguimiento, el modelo vuelve a aparecer solo, sin tener que tocar Traer acá.
+- El auto-ajuste encaja contra el modelo (no contra su sombra ni la bandera) y con la escala real de la maqueta, y el auto continuo ya no queda trabado.
+- El modelo arranca opaco en cada vista, el botón de color dice el del modelo abierto y el Ejemplo no pisa un archivo que se está abriendo.
+- En el modo sensores, el botón atrás vuelve al inicio en vez de cerrar.
+- Un archivo que llega por WhatsApp con el visor 3D abierto ya no se pierde; y si lo nuevo no abre, la tarjeta Guardar / Compartir del anterior sigue andando.
+- El aviso de versión nueva ya no tapa la línea de estado cada 10 minutos, y el aviso de la aplicación en el navegador dice la versión correcta.
+- Sobre plano impreso en el navegador: antes de leer el QR dice «Apuntá al QR completo» (decía «perdió la referencia»), y «Fijar en la hoja y moverme» aparece solo si el teléfono lo soporta.
+- Aplicación: apoyar el modelo justo cuando ARCore recupera el seguimiento ya no cierra la vista; la lectura del QR no se traba; la voz no queda escuchando con la app en el fondo; un cambio a modo oscuro (ahorro de batería) no reinicia la vista AR; si el visor del sistema se está actualizando avisa en vez de cerrarse; exportar sobre un archivo existente no deja basura al final; un enlace de otra PC no cambia la PC vinculada sin preguntar.
+- Programas de la PC: el convertidor cierra SOLO el Inventor que abre él (antes, si uno abría su Inventor durante una conversión larga, podía cerrárselo a la fuerza con el trabajo sin guardar); no quedan Inventor ocultos abiertos si una conversión se corta por tiempo; dos ventanas a la vez no levantan dos servidores; una página web abierta en la PC no puede pedirle que abra archivos; la cola tiene tope; un modelo enorme no pierde los colores.
+
+Verificación: cuatro revisiones de la app completa (núcleo, interfaz, aplicación Android y programas de la PC), los hallazgos confirmados corregidos; gate antes de publicar (sintaxis, que cada botón y recurso exista en la interfaz, núcleo en Node, PC sin Inventor y las 27 baterías Java de la vista nativa) y la capa de navegador (puente con la aplicación 94, 3DDUT 25 y siete suites más). Los arreglos de la vista AR nativa quedan para probar en el teléfono.
+
+Instalar cada APK 4.37.0 sobre la anterior, sin desinstalar.
+
 MS AR y 3DDUT AR 4.36.0
 
 - La vista ya no queda borrosa para siempre después de salir y volver a la app (una llamada, WhatsApp, el permiso del micrófono): el tiempo afuera se contaba como si el teléfono no diera abasto y la resolución bajaba un escalón cada vez. Ahora no cuentan las pausas, el arranque al volver ni los trabajos de un momento (apoyar, volcar, tocar, foto, video). Si el teléfono realmente no llega, igual baja, y ahora también cuando está muy cargado (antes, justo ahí, no bajaba nunca).

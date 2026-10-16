@@ -72,6 +72,16 @@ body{ background:var(--fondo); color:var(--txt); font-family:var(--f); touch-act
 .nota.ok{ color:#0a7f8a; }
 .diag{ margin-top:8px; padding:10px; border-radius:10px; background:#EEF1F4; font-family:var(--mono); font-size:.68rem; line-height:1.5; color:var(--txt2); white-space:pre-wrap; word-break:break-all; }
 details summary{ font-size:.8rem; color:var(--txt2); cursor:pointer; margin-top:8px; }
+/* avisos que agrega el puente con la APK (versión nueva, modelo recibido): tarjeta con tinte verde.
+   v4.37: antes no tenían estilo acá y sus botones salían con texto blanco sobre blanco */
+.card{ background:var(--tarj); border:1px solid var(--linea); border-radius:16px; padding:14px; box-shadow:0 2px 10px rgba(23,32,42,.05); font-size:.88rem; line-height:1.4; }
+.card.aviso{ background:#F1FBF7; border-color:#9fe0c8; }
+.card.aviso b{ display:block; font-size:.95rem; }
+.card.aviso p{ color:var(--txt2); }
+.card a{ color:var(--teal2); font-weight:700; }
+.mini.ok-btn{ border-color:#1fae84; color:#0b6b4c; font-weight:700; }
+/* en la aplicación (APK) la vista AR propia ubica con un toque, la hoja o «Alinear a pared»: la ubicación del navegador no aplica */
+html[data-native-paper="true"] .solo-web{ display:none; }
 .btn-l{ width:100%; min-height:44px; margin-top:8px; border-radius:999px; border:1px solid var(--linea); background:#fff; color:var(--txt); font-family:var(--f); font-size:.85rem; cursor:pointer; }
 
 /* botón grande fijo abajo */
@@ -180,8 +190,8 @@ details summary{ font-size:.8rem; color:var(--txt2); cursor:pointer; margin-top:
     <div class="paso3">
       <div class="num">3</div>
       <div class="cont">
-        <h2>Ubicación <small>a tamaño real</small></h2>
-        <div class="pills">
+        <h2 class="solo-web">Ubicación <small>a tamaño real</small></h2>
+        <div class="pills solo-web">
           <label><input type="radio" name="ubic" value="auto" checked><span>Automática<small>según el tamaño</small></span></label>
           <label><input type="radio" name="ubic" value="toque"><span>Un toque<small>pieza · mueble</small></span></label>
           <label><input type="radio" name="ubic" value="2puntos"><span>2 puntos<small>casa · galpón</small></span></label>
@@ -199,7 +209,7 @@ details summary{ font-size:.8rem; color:var(--txt2); cursor:pointer; margin-top:
              placeholder="mm — dejalo vacío si imprimiste al 100 %" style="width:100%">
       <label class="lbl" for="msModoPapel">Ubicar sobre la hoja</label>
       <select id="msModoPapel" class="mini" style="width:100%"><option value="automatico" selected>QR · ubicación automática</option><option value="camara">Seguir QR visible con cámara</option><option value="anclado">Dos cruces · anclaje manual</option><option value="nativo">Reconocimiento WebXR · si está disponible</option></select>
-      <div class="nota"><b>Sobre plano impreso:</b> en la APK 4.16, el QR ubica el modelo automáticamente y el seguimiento espacial permite mover el teléfono. Mantené la hoja quieta. En el navegador, el seguimiento por cámara necesita mantener el QR visible; también podés usar las dos cruces.</div>
+      <div class="nota"><b>Sobre plano impreso:</b> en la aplicación (APK), el QR ubica el modelo automáticamente y el seguimiento espacial permite mover el teléfono. Mantené la hoja quieta. En el navegador, el seguimiento por cámara necesita mantener el QR visible; también podés usar las dos cruces.</div>
 
         <details>
           <summary>Más opciones</summary>
@@ -210,7 +220,7 @@ details summary{ font-size:.8rem; color:var(--txt2); cursor:pointer; margin-top:
       </div>
     </div>
 
-    <div class="ver"><span id="ver">v4.36.0</span> · 3DDUT Digital Craft</div>
+    <div class="ver"><span id="ver">v4.37.0</span> · 3DDUT Digital Craft</div>
   </main>
 
   <div class="accion">
@@ -310,7 +320,7 @@ details summary{ font-size:.8rem; color:var(--txt2); cursor:pointer; margin-top:
 <script>
 /* configuración de MARCA que lee ar-core.js */
 window.AR_CONFIG = {
-  marca: '3DDUT', version: 'v4.36.0', mejorasMS: true,
+  marca: '3DDUT', version: 'v4.37.0', mejorasMS: true,
   pielDefault: 'altura',             // OBJ sin colores → degradé 3DDUT (teal → naranja)
   cacheCompartido: 'ar-compartido',
   etiquetaNombre: true,

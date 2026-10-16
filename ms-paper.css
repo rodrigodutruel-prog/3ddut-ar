@@ -6,6 +6,7 @@
 #papelEstado[data-state="ok"]{border-color:#36dc9a}
 #papelEstado[data-state="error"]{border-color:#ff6572}
 #papelCamara button,#papelCamara summary{font:inherit;color:#fff;background:#26333deb;border:1px solid #5b7380;border-radius:9px;padding:11px 14px;min-height:44px;cursor:pointer}
+#papelCamara button[hidden]{display:none}
 #papelCamara button:disabled{opacity:.5;cursor:default}
 #papelCamara button:focus-visible{outline:3px solid #00c2d1;outline-offset:2px}
 #papelCamara .papel-controles{position:absolute;bottom:max(12px,env(safe-area-inset-bottom));left:12px;right:12px;display:flex;flex-wrap:wrap;justify-content:center;gap:8px;align-items:end}
