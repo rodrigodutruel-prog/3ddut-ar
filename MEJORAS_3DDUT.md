@@ -1,3 +1,13 @@
+3DDUT AR 4.38.1
+
+- Encajar con lo real busca más lejos: hasta unos 2 m alrededor de donde apoyaste el 3D (un modelo largo se apoya por el centro de su planta, que puede caer lejos de la parte que ya está hecha).
+- Cuando no encaja, el aviso dice los números (cuántos puntos midió, cuánto coincide, cuánto se ve) y lo medido queda en Descargas › 3DDUT AR › encaje_<fecha>.bin, para revisarlo en la PC.
+- El Diagnóstico ya no pierde lo que pasó en la vista AR: si el teléfono cerraba la pantalla de la app por memoria mientras estabas en la vista AR, ahora la pantalla se rehace sola y lo anotado llega igual.
+
+Verificación: la batería del encaje suma un modelo largo con una parte que lo real no tiene, apoyado tocando sobre la parte real, hasta 2 m corrido (queda a 8-15 mm), y que lo guardado en el archivo da el mismo encaje en la PC. Gate antes de publicar y las dos APK compiladas.
+
+Instalar cada APK 4.38.1 sobre la anterior, sin desinstalar.
+
 3DDUT AR 4.38.0
 
 - Encajar con lo real: con la pieza ya hecha, al apoyar el 3D cerca de ella se pone solo encima. Mientras movés el teléfono despacio de costado, mirando la pieza, mide unos segundos lo que tiene delante (se ven puntos amarillos sobre lo que va midiendo) y busca el giro y el corrimiento que dejan el 3D sobre lo real. No hace falta apoyarlo justo ni derecho: alcanza con que quede cerca (corrido hasta cerca de un metro y girado para cualquier lado).
