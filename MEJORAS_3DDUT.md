@@ -1,3 +1,15 @@
+3DDUT AR 4.38.0
+
+- Encajar con lo real: con la pieza ya hecha, al apoyar el 3D cerca de ella se pone solo encima. Mientras movés el teléfono despacio de costado, mirando la pieza, mide unos segundos lo que tiene delante (se ven puntos amarillos sobre lo que va midiendo) y busca el giro y el corrimiento que dejan el 3D sobre lo real. No hace falta apoyarlo justo ni derecho: alcanza con que quede cerca (corrido hasta cerca de un metro y girado para cualquier lado).
+- Si no encuentra lo real que coincide (la pieza todavía no está, o el 3D quedó lejos), el 3D queda donde lo pusiste y lo avisa. No lo pega a otra máquina ni a una pared: antes de moverlo controla que, donde el 3D pone superficie, el teléfono vea esa superficie y no lo que hay detrás.
+- En Ajustar, una fila nueva: «Encajar al real» (lo intenta de nuevo desde donde está; mientras trabaja, el mismo botón lo cancela), «Deshacer encaje» (vuelve a donde estaba) y «Al apoyar: encaja / no» (para que al apoyar no lo intente; se recuerda).
+- Va a tamaño real, con el modelo apoyado en el piso. Con la pared marcada (Alinear a pared) respeta la cara contra la pared y solo corrige unos grados. Hace falta un teléfono que mida la profundidad (los que no tienen sensor la calculan al moverse).
+- El Diagnóstico anota cada encaje (cuánto midió, cuánto coincide, cuánto giró y se movió).
+
+Verificación: una escena armada a mano (un estante con piezas y un camino de rodillos, pared, piso y otra máquina al lado) medida desde seis lugares con ruido y medidas falsas. El 3D corrido y girado (hasta 140°) queda sobre el real a 6-24 mm, también con el triple de ruido y con parte del real todavía sin hacer. Sin el real, con un gabinete cerrado del mismo tamaño en su lugar o con el real fuera de alcance, no lo mueve. Gate antes de publicar (con las 28 baterías Java, entre ellas la nueva del encaje) y las dos APK compiladas. El encaje con la cámara real queda para probar en el teléfono.
+
+Instalar cada APK 4.38.0 sobre la anterior, sin desinstalar.
+
 3DDUT AR 4.37.0
 
 - Las tarjetas «Hay una versión nueva» y «Modelo recibido» ya tienen su estilo, y sus botones Guardar en el teléfono / Compartir se leen (salían con letra blanca sobre fondo blanco). El cuadro de Replanteo en obra tampoco tenía legible el botón «Generar la marca».
